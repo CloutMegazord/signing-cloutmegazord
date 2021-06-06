@@ -3,11 +3,6 @@
     "rules": "database.rules.json"
   },
   "functions": {
-    "predeploy": [
-      "npm --prefix ./functions/ install",
-      "npm --prefix \"$RESOURCE_DIR\" run lint",
-      "npm --prefix ./functions/ run start"
-    ],
     "source": "functions"
   },
   "emulators": {
