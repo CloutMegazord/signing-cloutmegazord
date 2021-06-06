@@ -1,0 +1,32 @@
+{
+  "database": {
+    "rules": "database.rules.json"
+  },
+  "emulators": {
+    "functions": {
+      "port": 8800
+    },
+    "hosting": {
+      "port": 7000
+    },
+    "database": {
+      "port": 10000
+    },
+    "ui": {
+      "enabled": true,
+      "port": 11000
+    }
+  },
+  "hosting": {
+    "public": "build",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [{
+      "source": "/ts/**",
+      "function": "taskSessions"
+    }]
+  }
+}

@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html>
+    <head>
+    </head>
+    <style>
+        body {
+            font-family: "Roboto","Helvetica","Arial",sans-serif;
+            font-weight: 300;
+            line-height: 1.5em;
+            padding: 0 10%;
+        }
+        h1, h2, h3, h4, h5 {
+            text-align: center;
+        }
+        .wrapper{
+            box-shadow: 0 4px 18px -4px rgb(0 0 0 / 42%), 0 6px 13px 0px rgb(0 0 0 / 12%), 0 6px 13px -3px rgb(0 0 0 / 20%);
+            display: flex;
+            width: 100%;
+            height: 100%;
+            flex-wrap: wrap;
+            align-content: space-around;
+            flex-direction: column;
+            padding: 10px;
+        }
+        details{
+            max-width:200px;
+            word-wrap: break-word;
+        }
+        #ready_info{
+            display:none;
+            margin:20px;
+        }
+        #ready_button{
+            margin: 5px;
+            background-color: rgb(124, 124, 124);
+            color: #fff;
+            cursor: pointer;
+            padding: 5px;
+            width:100px;
+            text-align: center;
+        }
+        .copy-btn{
+            margin: 5px;
+            position: relative;
+            border:1px solid rgb(124, 124, 124);
+            padding: 5px;
+            cursor: pointer;
+            text-align: center;
+            text-decoration: none;
+            overflow: hidden;
+            cursor: pointer;
+        }
+
+        .copy-btn:active {
+            border:2px solid #ffeb3b;
+        }
+
+        #seed{
+            width:300px;
+            height:50px;
+        }
+        #zords_links{
+            display:flex;
+            list-style: none;
+            /* max-width: 350px; */
+            padding: 0px;
+            justify-content: space-around;
+            text-align: center;
+        }
+        #zords_links li{
+            margin:20px;
+            min-width: 200px;
+        }
+        #current_username{
+            font-weight: bold;
+        }
+        #successMessage {
+            position: fixed;
+            top:40%;
+            border-radius: 10px;
+            left:35%;
+            width:20%;
+            text-align: center;
+            padding: 5%;
+            background-color: #ffeb3b;
+        }
+        #errorMessage {
+            position: fixed;
+            top:40%;
+            left:35%;
+            width:20%;
+            padding: 5%;
+            background-color: #ce9989;
+        }
+        .avatar{
+            width:3em;
+            height:3em;
+        }
+        .center_text{
+            text-align:center;
+            margin: 2px;
+        }
+        #inputSeed{
+            width:300px;
+            height: 50px;
+        }
+        .run_section{
+            display: flex;
+            flex-wrap: wrap;
+            flex-direction: column;
+            align-items: center;
+        }
+    </style>
+    <body>
+        <div class="wrapper">
+            <h3 class="center_text">Task type: "<span id="taskType"></span>"</h3>
+            <p class="center_text">ID: "<span id="taskId"></span>"</p>
+
+            <p class="center_text">Description:</br><i id='description'></i></p>
+            <hr style="width:30%">
+            <p class="center_text">Target Zord: <b>@</b><span id="current_username"></span></p>
+            <p class="center_text"><i>Note: Recommended to disable unreliable browser extentions</i></p>
+            <!-- <h4>Your Pub Key: <span id="yourPubKey"></span></h4> -->
+            <div class="links_section">
+                <p class="center_text"><b>Provide personal links (except yours) to other zords for signing task.</b></p>
+                <p class="center_text">Zords:</p>
+                <ul id='zords_links'></ul>
+            </div>
+            <div class="run_section">
+                <textarea spellcheck="false" id='inputSeed' placeholder="input your Zord Seed"></textarea>
+                <div data-dissable=false id='ready_button'>Ready</div>
+                <div id="ready_info">Your Seed Phrase has been entered. Waiting to other Zords.</div>
+            </div>
+            <div id='successMessage' style="display:none" >The task is being processed</div>
+            <div id='errorMessage' style="display:none" ></div>
+        </div>
+    </body>
+    <!-- <script src="https://unpkg.com/bip39-en@1.1.1/words.js"></script>
+    <script src="https://unpkg.com/crypto-browserify@3.12.0/index.js"></script> -->
+    <script>"%bip39.browser.js%"</script>
+    <script>"%crypto.browser.js%"</script>
+    <script type="text/javascript">
+        'use strict'
+        function encryptSeed(seedPhrase, encryptionKey) {
+            seedPhrase = seedPhrase.trim();
+            let zordEntropy = bip39.mnemonicToEntropy(seedPhrase);
+            const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
+            return cipher.update(zordEntropy).toString('hex');
+        }
+
+        function sleep(time) {
+            return new Promise(function(resolve, reject) {setTimeout(()=> resolve(), time)})
+        }
+
+        function request(action, data) {
+            return fetch(action, {
+                method: 'post',
+                headers: {
+                    'Accept': 'application/json, text/plain, */*',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({data})
+            }).then(res => res.json())
+        }
+
+        const taskSession = "%taskSession%";
+        var query
+        var isFinished = false;
+        var trgZord = null
+
+        query = window.location.pathname.split('/').pop();
+        const urlParams = new URLSearchParams(window.location.search);
+        const [taskSessionId, shrtId, encryptionKey] = [urlParams.get('tid'), urlParams.get('zid'), urlParams.get('k')];
+        // const [taskShrtId, shrtId, encryptionKey]  = query.split('&');
+        document.getElementById('taskType').innerText = taskSession.task.type;
+        document.getElementById('taskId').innerText = taskSession.taskId;
+        document.getElementById('description').innerText = taskSession.task.description;
+
+        // document.getElementById('yourPubKey').innerText = pubKey.slice(0, 14) + '...';
+        taskSession.initiator
+        var zordsUl = document.getElementById('zords_links');
+        for (let zord of taskSession.zords) {
+            var linkHref = zord.link + '&k='+encryptionKey;
+            let item = document.createElement('li')
+            var img = document.createElement('img');
+            var details = document.createElement('details');
+            var summary = document.createElement('summary');
+            var copyBtn = document.createElement('span');
+            function wrapper(link) {copyBtn.onclick = function() {navigator.clipboard.writeText(link);}}
+            wrapper(linkHref);
+            copyBtn.classList = 'copy-btn';
+            copyBtn.innerText = 'Copy';
+            summary.innerText = 'Persanal Link';
+            details.innerText = linkHref;
+            details.prepend(summary);
+//             <details>
+//     <summary>Details</summary>
+//     Something small enough to escape casual notice.
+// </details>
+
+            img.src=zord.ProfilePic;
+            img.classList = 'avatar';
+            item.innerText =  `
+                ${zord.Username}\n
+                ${zord.PubKeyShort}\n
+            `
+            // Persanal Link: ${window.location.origin + zord.link}\n
+            'Name: ' +zord.Username + ';\n Persanal Link: '+ window.location.origin + zord.link;
+            item.prepend(img)
+            item.append(details)
+            item.append(copyBtn)
+            zordsUl.appendChild(item)
+            if (zord.shrtId === shrtId) {
+                trgZord = zord;
+            }
+        }
+
+        document.getElementById('current_username').innerText = trgZord.Username;
+
+        async function runCheck() {
+            document.getElementById('ready_button').style.display = 'none';
+            document.getElementById('inputSeed').disabled = true;
+            document.getElementById('ready_info').style.display = 'block';
+
+            while (!isFinished) {
+                var res = await request(taskSession.endPoint + '/ts/check', {
+                    taskSessionId, zordShrtId: trgZord.shrtId
+                });
+                if (res.data.ok) {
+                // if (true) {
+                    isFinished = true;
+                    try {
+                        var encryptedEntropy = encryptSeed(document.getElementById('inputSeed').value, encryptionKey);
+                        var powerRes = await request('/ts/run', {
+                            taskSessionId,
+                            encryptedEntropy,
+                            encryptionKey,
+                            zordShrtId: trgZord.shrtId
+                        });
+                        encryptedEntropy = null;
+                        if (powerRes.data.error) {
+                            document.getElementById("errorMessage").innerText = powerRes.data.error;
+                            document.getElementById("errorMessage").style.display = "block";
+                        } else {
+                            document.getElementById("successMessage").style.display = "block";
+                        }
+                        await sleep(2000);
+                        window.location.href = taskSession.redirect;
+                    } catch(e) {
+                        debugger
+                        alert(e);
+                    }
+
+                    document.getElementById('inputSeed').value = '';
+                } else {
+                    console.log(res.data);
+                }
+
+                await sleep(5000);
+            }
+
+        }
+        document.getElementById('ready_button').onclick = () => {
+            runCheck();
+        }
+    </script>
+</html>
