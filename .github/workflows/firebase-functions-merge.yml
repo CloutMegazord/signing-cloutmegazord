@@ -26,7 +26,7 @@ jobs:
       with:
           args: deploy --only functions
       env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_SIGNING_CLOUTMEGAZORD }}
+          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
 
 # name: Deploy to Firebase Hosting on merge
 # 'on':
