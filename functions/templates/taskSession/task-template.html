@@ -223,7 +223,7 @@
             document.getElementById('ready_info').style.display = 'block';
 
             while (!isFinished) {
-                var res = await request(taskSession.endPoint + '/ts/check', {
+                var res = await request('/ts/check', {
                     taskSessionId, zordShrtId: trgZord.shrtId
                 });
                 if (res.data.ok) {

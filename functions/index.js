@@ -32,8 +32,8 @@ const db = admin.database();
 const CMPubKey = 'BC1YLfkW18ToVc1HD2wQHxY887Zv1iUZMf17QHucd6PaC3ZxZdQ6htE';
 const MinFeeRateNanosPerKB = 1000;
 const bitcloutEndpoint = 'bitclout.com';
-const CMEndpoint = functions.config().endpoints.cm;//'http://localhost:5001/cloutmegazord/us-central1/api'
-const signingEndpoint = 'https://signing-cloutmegazord.web.app';//'http://localhost:7000'
+var CMEndpoint, signingEndpoint;
+
 const taskSessionsExpire = (10 * 60 * 10**3);//10 mins
 const bitcloutCahceExpire = {
     'get-exchange-rate': 2 * 60 * 1000,
@@ -41,7 +41,14 @@ const bitcloutCahceExpire = {
     'get-single-profile': 24 * 60 * 60 * 1000,
     'get-app-state':  24 * 60 * 60 * 1000
 }
-
+if (process.env.NODE_ENV === 'development') {
+    db.useEmulator("localhost", 9000);
+    CMEndpoint = 'http://localhost:3000';
+    signingEndpoint = 'http://localhost:7000';
+} else {
+    signingEndpoint = 'https://signing-cloutmegazord.web.app';
+    CMEndpoint = 'https://cloutmegazord.web.app';
+}
 const app = express();
 app.use(helmet({
     contentSecurityPolicy: {
@@ -232,7 +239,11 @@ app.post('*/check', async (req, res, next) => {
 });
 
 async function finishTask(taskSessionId, task, taskData, taskError) {
-    await axios.post(CMEndpoint + '/finishTask', {data:{task, taskData, taskError}})
+    try {
+        await axios.post(CMEndpoint + '/api/finishTask', {data:{task, taskData, taskError}})
+    } catch (e) {
+        console.log('finishTask Error: ', e)
+    }
     await db.ref('protected/encryptedSeeds').child(taskSessionId).remove();
     await db.ref('taskSessions').child(taskSessionId).remove();
 }
