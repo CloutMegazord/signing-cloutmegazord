@@ -43,7 +43,7 @@ const bitcloutCahceExpire = {
 }
 if (process.env.NODE_ENV === 'development') {
     db.useEmulator("localhost", 9000);
-    CMEndpoint = 'http://localhost:3000';
+    CMEndpoint = 'http://localhost:5000';
     signingEndpoint = 'http://localhost:7000';
 } else {
     signingEndpoint = 'https://signing-cloutmegazord.web.app';
@@ -189,7 +189,7 @@ app.get('*/get', async function(req, res) {
 //     link: `/gts/${taskShrtId}&${shrtId}&${encryptionKey}`
 // }
 
-app.post('*/create', async (req, res, next) => {
+app.post('/ts/create', async (req, res, next) => {
     const data = req.body.data;
     var taskSession = null;
     const taskId = data.taskId;
@@ -207,7 +207,7 @@ app.post('*/create', async (req, res, next) => {
     res.send({ok: true});
 })
 
-app.post('*/getTaskSession', async (req, res, next) => {
+app.post('/ts/getTaskSession', async (req, res, next) => {
     const taskId = req.data.taskId;
     const taskSessionRef = await db.ref('taskSessions/' + taskId).get();
     if (taskSessionRef.exists()) {
@@ -218,7 +218,7 @@ app.post('*/getTaskSession', async (req, res, next) => {
     res.send({data: null})
 })
 
-app.post('*/check', async (req, res, next) => {
+app.post('/ts/check', async (req, res, next) => {
     var {taskSessionId, zordShrtId} = req.body.data;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     if (!taskSessionRef.exists()) {
@@ -242,7 +242,7 @@ async function finishTask(taskSessionId, task, taskData, taskError) {
     try {
         await axios.post(CMEndpoint + '/api/finishTask', {data:{task, taskData, taskError}})
     } catch (e) {
-        console.log('finishTask Error: ', e)
+        console.log('finishTask Error: ', e.message)
     }
     await db.ref('protected/encryptedSeeds').child(taskSessionId).remove();
     await db.ref('taskSessions').child(taskSessionId).remove();
@@ -304,7 +304,7 @@ function zordsToMegazord(encryptedZordsEntropy, encryptionKey) {
 }
 
 // Create a new array with total length and merge all source arrays.
-app.post('*/run', async (req, res, next) => {
+app.post('/ts/run', async (req, res, next) => {
     const {taskSessionId, zordShrtId, encryptedEntropy, encryptionKey} = req.body.data;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     const encryptedSeedsRef = await db.ref('protected/encryptedSeeds/' + taskSessionId).get();
@@ -375,20 +375,32 @@ app.post('*/run', async (req, res, next) => {
         var feeNanos = getFee(AmountNanos, exchRate.USDbyBTCLT)
         if (task.type === 'send') {
             try {
+                var FeePreviewResp = await bitcloutApiService.SendBitCloutPreview(
+                    bitcloutEndpoint,
+                    taskSession.megazordPublicKey,
+                    taskSession.task.Recipient,
+                    -1,
+                    MinFeeRateNanosPerKB
+                );
                 var sendBitCloutPreviewResp = await bitcloutApiService.SendBitCloutPreview(
                     bitcloutEndpoint,
                     taskSession.megazordPublicKey,
                     taskSession.task.Recipient,
-                    AmountNanos,// - feeNanos
+                    AmountNanos - FeePreviewResp.data.FeeNanos,// - feeNanos
                     MinFeeRateNanosPerKB
                 );
-                const signedTransactionHex = signingService.signTransaction(
+                var signedTransactionHex = signingService.signTransaction(
                     megazordPrivateKey,
                     sendBitCloutPreviewResp.data.TransactionHex)
-                bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex)
             } catch (e) {
-                console.log(e);
                 taskError = 'Signing transaction error.';
+            }
+            if(!taskError) {
+                try {
+                    bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex)
+                } catch (e) {
+                    taskError = e.message;
+                }
             }
         } else {
             taskError = 'Task Not Implemented yet.';
