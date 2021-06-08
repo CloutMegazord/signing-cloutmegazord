@@ -387,6 +387,7 @@ app.post('*/run', async (req, res, next) => {
                     sendBitCloutPreviewResp.data.TransactionHex)
                 bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex)
             } catch (e) {
+                console.log(e);
                 taskError = 'Signing transaction error.';
             }
         } else {
