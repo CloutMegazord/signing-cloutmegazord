@@ -26,7 +26,6 @@ bitcloutApiService._handleError = (e) => {
 }
 admin.initializeApp();
 const db = admin.database();
-// db.useEmulator("localhost", 9000)
 //Protected functionality.
 
 const CMPubKey = 'BC1YLfkW18ToVc1HD2wQHxY887Zv1iUZMf17QHucd6PaC3ZxZdQ6htE';
@@ -34,7 +33,7 @@ const MinFeeRateNanosPerKB = 1000;
 const bitcloutEndpoint = 'bitclout.com';
 var CMEndpoint, signingEndpoint;
 
-const taskSessionsExpire = (10 * 60 * 10**3);//10 mins
+const taskSessionsExpire = (10 * 60 * 1000);//10 mins
 const bitcloutCahceExpire = {
     'get-exchange-rate': 2 * 60 * 1000,
     'ticker': 2 * 60 * 1000,
@@ -61,23 +60,27 @@ app.use(helmet({
 app.use(cors({ origin: true }));
 app.use(express.json({limit:'100kb'}))
 
-function expireCleaner(ref) {
+function expireCleaner(ref, name) {
     ref.orderByChild('expire').once('value', async function(s) {
         if (!s.val()) {return}
         const items = s.val();
         for (let key in items) {
             let item = items[key];
             if (Date.now() > item.expire) {
-                s.ref.child(key).remove();
+                if(name === 'taskSessions') {
+                    finishTask(item.taskId, {id: item.taskId, type: item.task.type},
+                        {megazordId:item.megazordId}, 'Task Sessions Expires')
+                } else {
+                    s.ref.child(key).remove();
+                }
             }
         }
     })
 }
-
 setInterval(() => {
-    expireCleaner(db.ref('protected/encryptedSeeds'));
-    expireCleaner(db.ref('taskSessions'));
-    expireCleaner(db.ref('bitcloutCache'));
+    // expireCleaner(db.ref('protected/encryptedSeeds'), 'protected/encryptedSeeds');
+    expireCleaner(db.ref('taskSessions'), 'taskSessions');
+    expireCleaner(db.ref('bitcloutCache'), 'bitcloutCache');
 }, 2 * 60 * 1000)
 
 async function bitcloutProxy(data) {
@@ -88,7 +91,7 @@ async function bitcloutProxy(data) {
         delete data['action']
         delete data['method']
         if (bitcloutCahceExpire[action]) {
-            const cachedDataRef = await db.ref('bitcloutCache').child(JSON.stringify(data)).get();
+            const cachedDataRef = await db.ref('bitcloutCache').child(JSON.stringify({[method]:data})).get();
             if (cachedDataRef.exists()) {
                 console.log('Cache Hit')
                 cachedData = cachedDataRef.val();
@@ -100,7 +103,7 @@ async function bitcloutProxy(data) {
             {headers: {'Content-Type': 'application/json'}
         }).then(resp => {
             if (bitcloutCahceExpire[action]) {
-                db.ref('bitcloutCache').child(JSON.stringify({method:data})).set({
+                db.ref('bitcloutCache').child(JSON.stringify({[method]:data})).set({
                     data: resp.data, expire: Date.now() + bitcloutCahceExpire[action]
                 })
             }
@@ -132,7 +135,7 @@ async function getExchangeRate() {
       return exchangeRate;
 }
 
-app.get('*/get', async function(req, res) {
+app.get('/ts/get', async function(req, res) {
     const taskSessionId = req.query.tid;
     const zordShrtId = req.query.zid;
     const encryptionKey = req.query.k;
@@ -204,7 +207,7 @@ app.post('/ts/create', async (req, res, next) => {
     taskSession = data.taskSession;
     taskSession.expire = Date.now() + taskSessionsExpire;
     await db.ref('taskSessions').child(taskId).set(taskSession);
-    res.send({ok: true});
+    res.send({ok: true, expire: taskSession.expire});
 })
 
 app.post('/ts/getTaskSession', async (req, res, next) => {
@@ -239,13 +242,13 @@ app.post('/ts/check', async (req, res, next) => {
 });
 
 async function finishTask(taskSessionId, task, taskData, taskError) {
+    await db.ref('protected/encryptedSeeds').child(taskSessionId).remove();
+    await db.ref('taskSessions').child(taskSessionId).remove();
     try {
         await axios.post(CMEndpoint + '/api/finishTask', {data:{task, taskData, taskError}})
     } catch (e) {
         console.log('finishTask Error: ', e.message)
     }
-    await db.ref('protected/encryptedSeeds').child(taskSessionId).remove();
-    await db.ref('taskSessions').child(taskSessionId).remove();
 }
 
 function getFee(AmountNanos, bitcloutPriceUSD) {
