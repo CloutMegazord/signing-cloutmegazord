@@ -40,7 +40,7 @@
             text-align: center;
         }
         .copy-btn{
-            margin: 5px;
+            margin: 10px;
             position: relative;
             border:1px solid rgb(124, 124, 124);
             padding: 5px;
@@ -103,6 +103,7 @@
         #inputSeed{
             width:300px;
             height: 50px;
+            padding:5px;
         }
         .run_section{
             display: flex;
@@ -122,12 +123,12 @@
             <p class="center_text"><i>Note: Recommended to disable unreliable browser extentions</i></p>
             <!-- <h4>Your Pub Key: <span id="yourPubKey"></span></h4> -->
             <div class="links_section">
-                <p class="center_text"><b>Provide personal links (except yours) to other zords for signing task.</b></p>
-                <p class="center_text">Zords:</p>
+                <p class="center_text"><b>Provide personal links to other zords for signing task.</b></p>
+                <p class="center_text">Other Zords:</p>
                 <ul id='zords_links'></ul>
             </div>
             <div class="run_section">
-                <textarea spellcheck="false" id='inputSeed' placeholder="input your Zord Seed"></textarea>
+                <textarea spellcheck="false" id='inputSeed' placeholder="Input your Zord Seed Phrase"></textarea>
                 <div data-dissable=false id='ready_button'>Ready</div>
                 <div id="ready_info">Your Seed Phrase has been entered. Waiting to other Zords.</div>
             </div>
@@ -180,39 +181,34 @@
         taskSession.initiator
         var zordsUl = document.getElementById('zords_links');
         for (let zord of taskSession.zords) {
+            if (zord.shrtId === shrtId) {
+                trgZord = zord;
+                continue;
+            }
             var linkHref = zord.link + '&k='+encryptionKey;
             let item = document.createElement('li')
             var img = document.createElement('img');
             var details = document.createElement('details');
             var summary = document.createElement('summary');
-            var copyBtn = document.createElement('span');
+            var copyBtn = document.createElement('div');
             function wrapper(link) {copyBtn.onclick = function() {navigator.clipboard.writeText(link);}}
             wrapper(linkHref);
             copyBtn.classList = 'copy-btn';
-            copyBtn.innerText = 'Copy';
-            summary.innerText = 'Persanal Link';
+            copyBtn.innerText = 'Copy Link';
+            summary.innerText = 'Send to @' + zord.Username;
             details.innerText = linkHref;
             details.prepend(summary);
-//             <details>
-//     <summary>Details</summary>
-//     Something small enough to escape casual notice.
-// </details>
-
             img.src=zord.ProfilePic;
             img.classList = 'avatar';
             item.innerText =  `
-                ${zord.Username}\n
+                ${zord.Username}
                 ${zord.PubKeyShort}\n
             `
-            // Persanal Link: ${window.location.origin + zord.link}\n
-            'Name: ' +zord.Username + ';\n Persanal Link: '+ window.location.origin + zord.link;
+            // 'Name: ' +zord.Username + ';\n Persanal Link: '+ window.location.origin + zord.link;
             item.prepend(img)
             item.append(details)
             item.append(copyBtn)
             zordsUl.appendChild(item)
-            if (zord.shrtId === shrtId) {
-                trgZord = zord;
-            }
         }
 
         document.getElementById('current_username').innerText = trgZord.Username;
