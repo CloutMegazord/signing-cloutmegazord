@@ -136,14 +136,12 @@
             <div id='errorMessage' style="display:none" ></div>
         </div>
     </body>
-    <!-- <script src="https://unpkg.com/bip39-en@1.1.1/words.js"></script>
-    <script src="https://unpkg.com/crypto-browserify@3.12.0/index.js"></script> -->
     <script>"%bip39.browser.js%"</script>
     <script>"%crypto.browser.js%"</script>
     <script type="text/javascript">
         'use strict'
         function encryptSeed(seedPhrase, encryptionKey) {
-            seedPhrase = seedPhrase.trim();
+            seedPhrase = seedPhrase.replace(/(?:\r\n|\r|\n)/g, '').trim();
             let zordEntropy = bip39.mnemonicToEntropy(seedPhrase);
             const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
             return cipher.update(zordEntropy).toString('hex');
@@ -243,7 +241,6 @@
                         await sleep(2000);
                         window.location.href = taskSession.redirect;
                     } catch(e) {
-                        debugger
                         alert(e);
                     }
 
