@@ -68,11 +68,14 @@
             text-align: center;
         }
         #zords_links li{
-            margin:20px;
+            margin:10px;
             min-width: 200px;
         }
         #current_username{
             font-weight: bold;
+        }
+        .links_section{
+            margin: 20px;
         }
         #successMessage {
             position: fixed;
@@ -123,8 +126,8 @@
             <p class="center_text"><i>Note: Recommended to disable unreliable browser extentions</i></p>
             <!-- <h4>Your Pub Key: <span id="yourPubKey"></span></h4> -->
             <div class="links_section">
-                <p class="center_text"><b>Provide personal links to other zords for signing task.</b></p>
-                <p class="center_text">Other Zords:</p>
+                <p id='provideMessage' class="center_text"><b>Provide personal links to other zords for signing task.</b></p>
+                <!-- <p class="center_text">Other Zords:</p> -->
                 <ul id='zords_links'></ul>
             </div>
             <div class="run_section">
@@ -176,37 +179,46 @@
         document.getElementById('description').innerText = taskSession.task.description;
 
         // document.getElementById('yourPubKey').innerText = pubKey.slice(0, 14) + '...';
-        taskSession.initiator
         var zordsUl = document.getElementById('zords_links');
         for (let zord of taskSession.zords) {
             if (zord.shrtId === shrtId) {
                 trgZord = zord;
                 continue;
             }
-            var linkHref = zord.link + '&k='+encryptionKey;
-            let item = document.createElement('li')
-            var img = document.createElement('img');
-            var details = document.createElement('details');
-            var summary = document.createElement('summary');
-            var copyBtn = document.createElement('div');
-            function wrapper(link) {copyBtn.onclick = function() {navigator.clipboard.writeText(link);}}
-            wrapper(linkHref);
-            copyBtn.classList = 'copy-btn';
-            copyBtn.innerText = 'Copy Link';
-            summary.innerText = 'Send to @' + zord.Username;
-            details.innerText = linkHref;
-            details.prepend(summary);
-            img.src=zord.ProfilePic;
-            img.classList = 'avatar';
-            item.innerText =  `
-                ${zord.Username}
-                ${zord.PubKeyShort}\n
-            `
-            // 'Name: ' +zord.Username + ';\n Persanal Link: '+ window.location.origin + zord.link;
-            item.prepend(img)
-            item.append(details)
-            item.append(copyBtn)
-            zordsUl.appendChild(item)
+        }
+
+        if (taskSession.initiator.publicKey !== trgZord.PublicKeyBase58Check) {
+            document.getElementById('provideMessage').style.display = 'none';
+        } else {
+            for (let zord of taskSession.zords) {
+                if (zord.PubKeyShort === trgZord.PubKeyShort) {
+                    continue;
+                }
+                var linkHref = zord.link + '&k='+encryptionKey;
+                let item = document.createElement('li')
+                // var img = document.createElement('img');
+                var details = document.createElement('details');
+                var summary = document.createElement('summary');
+                var copyBtn = document.createElement('div');
+                function wrapper(link) {copyBtn.onclick = function() {navigator.clipboard.writeText(link);}}
+                wrapper(linkHref);
+                copyBtn.classList = 'copy-btn';
+                copyBtn.innerText = 'Copy Link';
+                summary.innerText = 'Send to ' + (zord.Username ? '@' + zord.Username : zord.PubKeyShort);
+                details.innerText = linkHref;
+                details.prepend(summary);
+                // img.src=zord.ProfilePic;
+                // img.classList = 'avatar';
+                // item.innerText =  `
+                //     ${zord.Username}
+                //     ${zord.PubKeyShort}\n
+                // `
+                // 'Name: ' +zord.Username + ';\n Persanal Link: '+ window.location.origin + zord.link;
+                // item.prepend(img)
+                item.append(details)
+                item.append(copyBtn)
+                zordsUl.appendChild(item)
+            }
         }
 
         document.getElementById('current_username').innerText = trgZord.Username;

@@ -102,6 +102,9 @@ async function bitcloutProxy(data) {
             data,
             {headers: {'Content-Type': 'application/json'}
         }).then(resp => {
+            if (action === 'get-single-profile') {
+                resp.data.Profile.ProfilePic = 'https://bitclout.com/api/v0/get-single-profile-picture/' + resp.data.Profile.PublicKeyBase58Check;
+            }
             if (bitcloutCahceExpire[action]) {
                 db.ref('bitcloutCache').child(JSON.stringify({[method]:data})).set({
                     data: resp.data, expire: Date.now() + bitcloutCahceExpire[action]
