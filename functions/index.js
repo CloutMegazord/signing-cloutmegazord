@@ -33,7 +33,6 @@ const MinFeeRateNanosPerKB = 1000;
 const bitcloutEndpoint = 'bitclout.com';
 var CMEndpoint, signingEndpoint;
 
-const taskSessionsExpire = (10 * 60 * 1000);//10 mins
 const bitcloutCahceExpire = {
     'get-exchange-rate': 2 * 60 * 1000,
     'ticker': 2 * 60 * 1000,
@@ -41,10 +40,12 @@ const bitcloutCahceExpire = {
     'get-app-state':  24 * 60 * 60 * 1000
 }
 if (process.env.NODE_ENV === 'development') {
+    var taskSessionsExpire = (100 * 60 * 1000);//100 mins
     db.useEmulator("localhost", 9000);
     CMEndpoint = 'http://localhost:5000';
     signingEndpoint = 'http://localhost:7000';
 } else {
+    var taskSessionsExpire = (10 * 60 * 1000);//10 mins
     signingEndpoint = 'https://signing-cloutmegazord.web.app';
     CMEndpoint = 'https://cloutmegazord.web.app';
 }
@@ -330,18 +331,20 @@ app.post('/ts/run', async (req, res, next) => {
         }
     }
     encryptedSeeds.zordsEntropy = encryptedSeeds.zordsEntropy || [];
-    if (encryptedSeeds.zordsEntropy.length === zordsCount) {
-        res.send({data: { ok: true }});
-        return
-    }
-
     const readyZords = encryptedSeeds.zordsEntropy.map(it => it.PublicKeyBase58Check)
     for (let zord of taskSession.zords) {
-        if ((zord.shrtId === zordShrtId) && !readyZords.includes(zord.PublicKeyBase58Check)) {
-            encryptedSeeds.zordsEntropy.push({
-                PublicKeyBase58Check: zord.PublicKeyBase58Check,
-                encryptedEntropy: encryptedEntropy
-            })
+        if ((zord.shrtId === zordShrtId)) {
+            if (readyZords.includes(zord.PublicKeyBase58Check)) {
+                encryptedSeeds.zordsEntropy[readyZords.indexOf(zord.PublicKeyBase58Check)] = {
+                    PublicKeyBase58Check: zord.PublicKeyBase58Check,
+                    encryptedEntropy: encryptedEntropy
+                }
+            } else {
+                encryptedSeeds.zordsEntropy.push({
+                    PublicKeyBase58Check: zord.PublicKeyBase58Check,
+                    encryptedEntropy: encryptedEntropy
+                })
+            }
         }
     }
 
