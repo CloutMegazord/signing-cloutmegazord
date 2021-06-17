@@ -168,6 +168,44 @@
         .title{
             margin-top:10px;
         }
+        .tooltip {
+            position: relative;
+            display: inline-block;
+            border-bottom: 1px dotted black;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            width: 220px;
+            background-color: #555;
+            color: #fff;
+            text-align: center;
+            border-radius: 6px;
+            padding: 5px 0;
+            position: absolute;
+            z-index: 1;
+            bottom: 125%;
+            left: -100px;
+            /* margin-left: -60px; */
+            opacity: 0;
+            transition: opacity 0.3s;
+        }
+
+        .tooltip .tooltiptext::after {
+            content: "";
+            position: absolute;
+            top: 100%;
+            left: 50%;
+            margin-left: -5px;
+            border-width: 5px;
+            border-style: solid;
+            border-color: #555 transparent transparent transparent;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
     </style>
     <body>
         <div class="wrapper">
@@ -192,6 +230,13 @@
                 </label>
                 <textarea spellcheck="false" id='inputSeed' placeholder="Zord Seed Phrase"></textarea>
                 <div data-dissable=false id='ready_button'>Sign Task</div>
+                <div class="remembe_wrapper">
+                    <input id="remember" type="checkbox" checked>
+                    <label for="remember">Remember Me
+                        <div class="tooltip">ℹ️<span class="tooltiptext">Seed phrase would be stored localy in browser Local Storage (in a similar way as bitclout.com)</span>
+                        </div>
+                    </label>
+                </div>
                 <div id="ready_info">Waiting to other Zords.</div>
             </div>
             <div id='successMessage' style="display:none" >The task is being processed</div>
@@ -314,6 +359,7 @@
                 // if (true) {
                     isFinished = true;
                     var zordEntropyHex;
+                    var rememberMe = document.getElementById('remember').checked;
                     /**
                      * Save zordEntropyHex to localStorage for simlify task signing
                     */
@@ -322,7 +368,9 @@
                     } else {
                         let seedPhrase = document.getElementById('inputSeed').value.replace(/(?:\r\n|\r|\n)/g, '').trim();
                         zordEntropyHex = bip39.mnemonicToEntropy(seedPhrase);
-                        localStorage.setItem(taskSession.megazordId, zordEntropyHex);
+                        if (rememberMe) {
+                            localStorage.setItem(taskSession.megazordId, zordEntropyHex);
+                        }
                     }
                     const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
                     var encryptedEntropy = cipher.update(zordEntropyHex).toString('hex');
@@ -358,6 +406,7 @@
         if (taskSession.megazordPublicKey && localStorage.getItem(taskSession.megazordId)) {
             document.getElementById('inputSeed').style.display = 'none';
             document.getElementById('inputSeedLabel').style.display = 'none';
+            document.getElementById('remembe_wrapper').style.display = 'none';
         }
         document.getElementById('ready_button').onclick = () => {
             runCheck();
