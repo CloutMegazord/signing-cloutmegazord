@@ -171,23 +171,24 @@ class BackendApiService {
         });
     }
 
-    SendBitClout(
+    TransferCreatorCoinPreview(
         endpoint,
         SenderPublicKeyBase58Check,
-        RecipientPublicKeyOrUsername,
-        AmountNanos,
+        CreatorPublicKeyBase58Check,
+        ReceiverUsernameOrPublicKeyBase58Check,
+        CreatorCoinToTransferNanos,
         MinFeeRateNanosPerKB
-      ){
-        const request = this.SendBitCloutPreview(
-          endpoint,
-          SenderPublicKeyBase58Check,
-          RecipientPublicKeyOrUsername,
-          AmountNanos,
-          MinFeeRateNanosPerKB
-        );
-
-        return this.signAndSubmitTransaction(endpoint, request, SenderPublicKeyBase58Check);
-      }
+        ){
+            CreatorCoinToTransferNanos = Math.floor(CreatorCoinToTransferNanos);
+            const routeName = BackendRoutes.RoutePathTransferCreatorCoin;
+            return this.post(endpoint, routeName, {
+                SenderPublicKeyBase58Check,
+                CreatorPublicKeyBase58Check,
+                ReceiverUsernameOrPublicKeyBase58Check,
+                CreatorCoinToTransferNanos,
+                MinFeeRateNanosPerKB,
+            });
+    }
 
     SubmitTransaction(endpoint, TransactionHex) {
         return this.post(endpoint, BackendRoutes.RoutePathSubmitTransaction, {

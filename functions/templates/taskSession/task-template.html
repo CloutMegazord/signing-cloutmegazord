@@ -219,7 +219,7 @@
             <!-- <h4>Your Pub Key: <span id="yourPubKey"></span></h4> -->
             <div class="links_section">
                 <p id='provideMessage' class="center_text">
-                    <b>Provide personal links (below) to other Megazord co-owners before Signing Task.</b>
+                    Provide personal links (below) to other Megazord co-owners before Signing Task.
                 </p>
                 <!-- <p class="center_text">Other Zords:</p> -->
                 <ul id='zords_links'></ul>
@@ -230,7 +230,7 @@
                 </label>
                 <textarea spellcheck="false" id='inputSeed' placeholder="Zord Seed Phrase"></textarea>
                 <div data-dissable=false id='ready_button'>Sign Task</div>
-                <div class="remembe_wrapper">
+                <div class="remember_wrapper" id="remember_wrapper">
                     <input id="remember" type="checkbox" checked>
                     <label for="remember">Remember Me
                         <div class="tooltip">ℹ️<span class="tooltiptext">Seed phrase would be stored localy in browser Local Storage (in a similar way as bitclout.com)</span>
@@ -348,6 +348,7 @@
 
         async function runCheck() {
             document.getElementById('ready_button').style.display = 'none';
+            document.getElementById('remember_wrapper').style.display = 'none';
             document.getElementById('inputSeed').disabled = true;
             document.getElementById('ready_info').style.display = 'block';
 
@@ -406,7 +407,7 @@
         if (taskSession.megazordPublicKey && localStorage.getItem(taskSession.megazordId)) {
             document.getElementById('inputSeed').style.display = 'none';
             document.getElementById('inputSeedLabel').style.display = 'none';
-            document.getElementById('remembe_wrapper').style.display = 'none';
+            document.getElementById('remember_wrapper').style.display = 'none';
         }
         document.getElementById('ready_button').onclick = () => {
             runCheck();
