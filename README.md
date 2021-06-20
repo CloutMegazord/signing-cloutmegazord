@@ -1,2 +1,2 @@
 # signing-cloutmegazord
-signing service for CloutMegazord.web.app
+signing service for https://cloutmegazord.com/
