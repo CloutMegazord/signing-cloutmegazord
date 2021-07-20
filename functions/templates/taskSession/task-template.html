@@ -206,6 +206,11 @@
             visibility: visible;
             opacity: 1;
         }
+        #seed_wrapper{
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
     </style>
     <body>
         <div class="wrapper">
@@ -225,10 +230,12 @@
                 <ul id='zords_links'></ul>
             </div>
             <div class="run_section">
-                <label for="inputSeed" id='inputSeedLabel'>
-                    Input Your <b>Zord Seed Phrase</b> and click "Sign Task" Button.
-                </label>
-                <textarea spellcheck="false" id='inputSeed' placeholder="Zord Seed Phrase"></textarea>
+                <div id="seed_wrapper">
+                    <label for="inputSeed" id='inputSeedLabel'>
+                        Input Your <b>Zord Seed Phrase</b> and click "Sign Task" Button.
+                    </label>
+                    <textarea spellcheck="false" id='inputSeed' placeholder="Zord Seed Phrase"></textarea>
+                </div>
                 <div data-dissable=false id='ready_button'>Sign Task</div>
                 <div class="remember_wrapper" id="remember_wrapper">
                     <input id="remember" type="checkbox" checked>
@@ -304,7 +311,7 @@
                 var copyBtn = document.createElement('div');
                 var info = document.createElement('div');
                 info.classList = 'sendLinkInfo';
-                function wrapper(link) {
+                function wrapper(link, linkInput) {
                     copyBtn.onclick = function() {
                         navigator.clipboard.writeText(link);
                         linkInput.select()
@@ -345,8 +352,38 @@
         }
         let trgZordName = trgZord.Username ? '@' + trgZord.Username : trgZord.PubKeyShort;
         document.getElementById('current_username').innerText = trgZordName;
+        var localItemName = taskSession.megazordId + '_' + trgZord.PublicKeyBase58Check;
+
+        //backward compatibility
+        if (taskSession.megazordPublicKey && localStorage.getItem(taskSession.megazordId)) {
+            localStorage.setItem(localItemName, localStorage.getItem(taskSession.megazordId));
+            localStorage.removeItem(taskSession.megazordId)
+        }
 
         async function runCheck() {
+            var zordEntropyHex;
+            var rememberMe = document.getElementById('remember').checked;
+            /**
+             * Save zordEntropyHex to localStorage for simlify task signing
+            */
+            if (taskSession.megazordPublicKey && localStorage.getItem(localItemName)) {
+                zordEntropyHex = localStorage.getItem(localItemName);
+            } else {
+                let seedPhrase = document.getElementById('inputSeed').value.replace(/(?:\r\n|\r|\n)/g, '').trim();
+                try {
+                    zordEntropyHex = bip39.mnemonicToEntropy(seedPhrase);
+                } catch (e) {
+                    alert('Error: ' + e.message);
+                    return;
+                }
+                if (rememberMe) {
+                    localStorage.setItem(localItemName, zordEntropyHex);
+                }
+            }
+            const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
+            var encryptedEntropy = cipher.update(zordEntropyHex).toString('hex');
+            zordEntropyHex = null;
+
             document.getElementById('ready_button').style.display = 'none';
             document.getElementById('remember_wrapper').style.display = 'none';
             document.getElementById('inputSeed').disabled = true;
@@ -359,23 +396,6 @@
                 if (res.data.ok) {
                 // if (true) {
                     isFinished = true;
-                    var zordEntropyHex;
-                    var rememberMe = document.getElementById('remember').checked;
-                    /**
-                     * Save zordEntropyHex to localStorage for simlify task signing
-                    */
-                    if (taskSession.megazordPublicKey && localStorage.getItem(taskSession.megazordId)) {
-                        zordEntropyHex = localStorage.getItem(taskSession.megazordId);
-                    } else {
-                        let seedPhrase = document.getElementById('inputSeed').value.replace(/(?:\r\n|\r|\n)/g, '').trim();
-                        zordEntropyHex = bip39.mnemonicToEntropy(seedPhrase);
-                        if (rememberMe) {
-                            localStorage.setItem(taskSession.megazordId, zordEntropyHex);
-                        }
-                    }
-                    const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
-                    var encryptedEntropy = cipher.update(zordEntropyHex).toString('hex');
-                    zordEntropyHex = null;
 
                     try {
                         var powerRes = await request('/ts/run', {
@@ -404,9 +424,8 @@
                 await sleep(5000);
             }
         }
-        if (taskSession.megazordPublicKey && localStorage.getItem(taskSession.megazordId)) {
-            document.getElementById('inputSeed').style.display = 'none';
-            document.getElementById('inputSeedLabel').style.display = 'none';
+        if (taskSession.megazordPublicKey && localStorage.getItem(localItemName)) {
+            document.getElementById('seed_wrapper').style.display = 'none';
             document.getElementById('remember_wrapper').style.display = 'none';
         }
         document.getElementById('ready_button').onclick = () => {
