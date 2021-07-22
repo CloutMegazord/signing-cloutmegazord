@@ -37,8 +37,7 @@ const bitcloutCahceExpire = {
     'get-exchange-rate': 2 * 60 * 1000,
     'ticker': 2 * 60 * 1000,
     'get-single-profile': 24 * 60 * 60 * 1000,
-    'get-app-state':  24 * 60 * 60 * 1000,
-    'get-users-stateless': 1 * 60 * 1000
+    'get-app-state':  24 * 60 * 60 * 1000
 }
 
 if (process.env.NODE_ENV === 'development') {
@@ -418,8 +417,6 @@ const Tasks = {
         }
 
         if (megazordFeeNanos) {
-            console.log('megazordFeeNanos', megazordFeeNanos);
-            console.log('ChangeAmountNanos', transactionResp.data.ChangeAmountNanos)
             if (megazordFeeNanos > transactionResp.data.ChangeAmountNanos) {
                 megazordFeeNanos = transactionResp.data.ChangeAmountNanos;
             }
@@ -434,40 +431,49 @@ const Tasks = {
             try {
                 bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedFeeTransactionHex);
             } catch (e) {
-                console.log(e);
+                console.log('Megazord Fee Transaction Error', e);
             }
         }
     },
-    async sendCC(taskSession) {
-        let AmountNanos = taskSession.task.AmountNanos;
-        let [feeNanos, _, __] = await this._getFee(
-            AmountNanos,
-            taskSession.zords, exchRate.USDbyBTCLT,
-            taskSession.task.CreatorPublicKeyBase58Check);
+    async sendCC(taskSession, exchRate, signTransaction) {
+        var zordsIds = taskSession.zords.map(it => it.PublicKeyBase58Check)
+        let AmountNanos = taskSession.task.AmountNanos,
+            megazordPublicKey = taskSession.megazordPublicKey,
+            Recipient = taskSession.task.Recipient,
+            CreatorPublicKeyBase58Check = taskSession.task.CreatorPublicKeyBase58Check,
+            transactionResp,
+            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, zordsIds);
 
-        let transactionResp = await bitcloutApiService.TransferCreatorCoinPreview(
+        transactionResp = await bitcloutApiService.TransferCreatorCoinPreview(
             bitcloutEndpoint,
-            taskSession.megazordPublicKey,
-            taskSession.task.CreatorPublicKeyBase58Check,
-            taskSession.task.Recipient,
-            AmountNanos - feeNanos,
+            megazordPublicKey,
+            CreatorPublicKeyBase58Check,
+            Recipient,
+            AmountNanos - megazordFeeNanos,
             MinFeeRateNanosPerKB
         );
-        let transactionHex = transactionResp.data.TransactionHex;
-        let feeTransactionHex;
-        if (feeNanos) {
-            FeeResp = await bitcloutApiService.TransferCreatorCoinPreview(
+        let signedTransactionHex = signTransaction(transactionResp.data.TransactionHex);
+        try {
+            await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
+        } catch (e) {
+            throw new Error("BitClout cannot process such transaction.")
+        }
+        if (megazordFeeNanos) {
+            let FeeResp = await bitcloutApiService.TransferCreatorCoinPreview(
                 bitcloutEndpoint,
-                taskSession.megazordPublicKey,
-                taskSession.task.CreatorPublicKeyBase58Check,
-                taskSession.task.Recipient,
-                feeNanos,
+                megazordPublicKey,
+                CreatorPublicKeyBase58Check,
+                CMPubKey,
+                megazordFeeNanos,
                 MinFeeRateNanosPerKB
             );
-            feeTransactionHex = FeeResp.data.TransactionHex;
+            let signedFeeTransactionHex = signTransaction(FeeResp.data.TransactionHex);
+            try {
+                bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedFeeTransactionHex);
+            } catch (e) {
+                console.log('Megazord Fee Transaction Error', e);
+            }
         }
-
-        return [transactionHex, feeTransactionHex];
     },
     async updateProfile(taskSession) {
         const transactionResp =  await bitcloutApiService.UpdateProfilePreview(
@@ -500,10 +506,10 @@ async function executeTask(taskSession, signTransaction) {
             if (taskSession.task.Currency === '$ClOUT') {
                 await Tasks.sendCLOUT(taskSession, exchRate, signTransaction);
             } else {
-                [transactionHex, feeTransactionHex] = await Tasks.sendCC(taskSession, exchRate, signTransaction);
+                await Tasks.sendCC(taskSession, exchRate, signTransaction);
             }
         } else if (task.type == 'updateProfile') {
-            [transactionHex, feeTransactionHex] = await Tasks.updateProfile(updateProfile);
+            await Tasks.updateProfile(updateProfile);
         }
     } catch(e) {
         throw new Error(e.message);
