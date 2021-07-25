@@ -475,24 +475,34 @@ const Tasks = {
             }
         }
     },
-    async updateProfile(taskSession) {
-        const transactionResp =  await bitcloutApiService.UpdateProfilePreview(
+    async updateProfile(taskSession, signTransaction) {
+        var base64Image = "";
+        if (taskSession.task.NewProfilePic) {
+            var image = await axios.get(taskSession.task.NewProfilePic, {responseType: 'arraybuffer'});
+            var raw = Buffer.from(image.data).toString('base64');
+            var base64Image = "data:" + image.headers["content-type"] + ";base64,"+raw;
+        }
+        const updateResp =  await bitcloutApiService.UpdateProfilePreview(
             bitcloutEndpoint,
             // Specific fields
             taskSession.megazordPublicKey,
             // Optional: Only needed when updater public key != profile public key
             '',
-            taskSession.task.NewUsername,
-            taskSession.task.NewDescription,
-            taskSession.task.NewProfilePic,
-            taskSession.task.NewCreatorBasisPoints,
+            taskSession.task.NewUsername || "",
+            taskSession.task.NewDescription || "",
+            base64Image,
+            taskSession.task.NewCreatorBasisPoints || "",
             1.25 * 100 * 100 /*NewStakeMultipleBasisPoints*/,
             false /*IsHidden*/,
             // End specific fields
             MinFeeRateNanosPerKB
         );
-        let transactionHex = transactionResp.data.TransactionHex;
-        return [transactionHex, undefined]
+        let signedTransactionHex = signTransaction(updateResp.data.TransactionHex);
+        try {
+            await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
+        } catch (e) {
+            throw new Error("BitClout cannot process such transaction.")
+        }
     }
 }
 
@@ -508,8 +518,8 @@ async function executeTask(taskSession, signTransaction) {
             } else {
                 await Tasks.sendCC(taskSession, exchRate, signTransaction);
             }
-        } else if (task.type == 'updateProfile') {
-            await Tasks.updateProfile(updateProfile);
+        } else if (type == 'updateProfile') {
+            await Tasks.updateProfile(taskSession, signTransaction);
         }
     } catch(e) {
         throw new Error(e.message);
