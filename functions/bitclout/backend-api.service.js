@@ -226,6 +226,24 @@ class BackendApiService {
             TransactionHex,
         });
     }
+    Reclout(endpoint, {UpdaterPublicKeyBase58Check, RecloutedPostHashHex}) {
+        return this.post(endpoint, BackendRoutes.RoutePathSubmitPost, {
+            UpdaterPublicKeyBase58Check,
+            RecloutedPostHashHex,
+            PostHashHexToModify: '',
+            ParentStakeID: '',
+            Title: '',
+            BodyObj: {},
+            PostExtraData: {},
+            Sub: '',
+            IsHidden: false,
+            MinFeeRateNanosPerKB: 1000,
+        });
+    }
 }
 
 module.exports = BackendApiService;
+
+// post(endpoint, path, body) {
+//     return this.httpClient.post(this._makeRequestURL(endpoint, path), body);
+// }
