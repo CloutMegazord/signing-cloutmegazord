@@ -50,6 +50,13 @@ if (process.env.NODE_ENV === 'development') {
     signingEndpoint = 'https://signing-cloutmegazord.web.app';
     CMEndpoint = 'https://cloutmegazord.web.app';
 }
+
+const FeesMap = {
+    1.5: 1 * 10**4,
+    1: 1 * 10**5,
+    0.5: Infinity
+}
+
 const app = express();
 app.use(helmet({
     contentSecurityPolicy: {
@@ -98,6 +105,7 @@ async function bitcloutProxy(data) {
                 console.log('Cache Hit')
                 cachedData = cachedDataRef.val();
                 resolve(cachedData.data);
+                return
             }
         }
         axios[method]("https://bitclout.com/api/v0/" + action,
@@ -122,20 +130,13 @@ async function bitcloutProxy(data) {
 async function getExchangeRate() {
     try {
         var exchangeRate = await bitcloutProxy({method: 'get', action: 'get-exchange-rate'});
-        var tickerResp = await axios.get('https://blockchain.info/ticker');
       } catch (e) {
         throw new Error(e);
       }
-
-      if (tickerResp.data.error) {
-        reject(tickerResp.data.error);
-      }
-      var ticker = tickerResp.data;
-      // var exchangeRate =  (ticker.USD.last / 100) * (exchangeRate.SatoshisPerBitCloutExchangeRate / 100000000)
       var exchangeRate =  {
         SatoshisPerBitCloutExchangeRate: exchangeRate.SatoshisPerBitCloutExchangeRate,
-        USDCentsPerBitcoinExchangeRate: ticker.USD.last,
-        USDbyBTCLT: ticker.USD.last * (exchangeRate.SatoshisPerBitCloutExchangeRate / 100000000)
+        USDCentsPerBitcoinExchangeRate: exchangeRate.USDCentsPerBitcoinExchangeRate,
+        USDbyBTCLT: exchangeRate.USDCentsPerBitCloutExchangeRate / 100
       }
       return exchangeRate;
 }
@@ -213,7 +214,7 @@ app.post('/ts/create', async (req, res, next) => {
     taskSession.expire = Date.now() + taskSessionsExpire;
     await db.ref('taskSessions').child(taskId).set(taskSession);
     res.send({ok: true, expire: taskSession.expire});
-})
+});
 
 app.post('/ts/getTaskSession', async (req, res, next) => {
     const taskId = req.data.taskId;
@@ -224,7 +225,14 @@ app.post('/ts/getTaskSession', async (req, res, next) => {
         return
     }
     res.send({data: null})
-})
+});
+
+app.post('/ts/getFee', async (req, res, next) => {
+    let {AmountNanos, zords, CreatorPublicKeyBase58Check} = req.body.data;
+    let exchRate = await getExchangeRate();
+    let [feeNanos, feePercent, AmountUSD] = await Tasks._getFee(AmountNanos, exchRate.USDbyBTCLT, zords, CreatorPublicKeyBase58Check)
+    res.send({feeNanos, feePercent, AmountUSD})
+});
 
 app.post('/ts/check', async (req, res, next) => {
     var {taskSessionId, zordShrtId} = req.body.data;
@@ -256,47 +264,56 @@ async function finishTask(taskSessionId, task, taskData, taskError) {
     }
 }
 
-function getFee(AmountNanos, bitcloutPriceUSD) {
-    var AmountNanosUSD = AmountNanos / 1e9 * bitcloutPriceUSD;
-    const feesMap = {
-      3: 1 * 10**4,
-      2: 1 * 10**5,
-      1: 1 * 10**6,
-      0.5: Infinity
-    }
-    var fees = Object.keys(feesMap).sort().reverse();
-    var trgFee = fees[0];
-    for (let fee of fees) {
-        let range = feesMap[fee];
-        if (AmountNanosUSD < range) {
-          trgFee = parseFloat(fee);
-          break
-        }
-    }
-    return AmountNanos * (trgFee / 100);
-}
-
 function zordsToMegazord(encryptedZordsEntropy, encryptionKey) {
     let length = 0;
-    var zordsEntropy = [];
-
-    for (let zordEntropy of encryptedZordsEntropy) {
+    let maxLength = 32;
+    var zordsEntropyBytes = [];
+    let zordsCount = encryptedZordsEntropy.length;
+    var megazordMnemonic;
+    const zordsEntropy = encryptedZordsEntropy.map(encryptedZordEntropy => {
         const decipher = crypto.createDecipher('aes-256-gcm', encryptionKey);
-        zordEntropy = decipher.update(Buffer.from(zordEntropy, 'hex')).toString();
-        if (!entropyService.isValidCustomEntropyHex(zordEntropy)) {
+        return decipher.update(Buffer.from(encryptedZordEntropy, 'hex')).toString()
+    });
+    //If the total entropy length is not divided at 32 we should choose which Zord will have short seed length.
+    let shortZordEntropy = [...zordsEntropy].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()))[0];
+    let shortZordId = zordsEntropy.indexOf(shortZordEntropy);
+    for (let zordId = 0;  zordId < zordsEntropy.length; zordId += 1) {
+        let zordEntropyHex = zordsEntropy[zordId];
+        if (!entropyService.isValidCustomEntropyHex(zordEntropyHex) && (zordEntropyHex.length === 32)) {
             throw new Error('Invalid mnemonic');
         }
-        zordEntropy = Buffer.from(zordEntropy, 'hex')
-        length += zordEntropy.length;
-        zordsEntropy.push(zordEntropy);
+        let zordEntropyBytes = Buffer.from(zordEntropyHex, 'hex')
+        //Handle case with 3+ owners
+        if (zordsEntropy.length > 2) {
+            let avgLength = maxLength / zordsCount;
+            avgLength = (zordId === shortZordId) ? Math.floor(avgLength) : Math.ceil(avgLength);
+            let _zordEntropyBytes = [];
+            // we can't use 32+ bytes for mnemonic and should reduce the size of the seedphrase as safely as possible
+            for (let byte of zordEntropyBytes) {
+                let index = byte % zordEntropyBytes.length;
+                //The positions of the used bits are calculated from the seedphrase bits.
+                _zordEntropyBytes.push(zordEntropyBytes[index]);
+                if (_zordEntropyBytes.length === avgLength) {
+                    break;
+                }
+            }
+            zordEntropyBytes = _zordEntropyBytes;
+        }
+        length += zordEntropyBytes.length;
+        if (length > maxLength) {
+            zordEntropyBytes = zordEntropyBytes.slice(0, zordEntropyBytes.length - (length - maxLength))
+            length = maxLength;
+        }
+        zordsEntropyBytes.push(zordEntropyBytes);
     }
     let megazordEntropy = new Uint8Array(length);
     let offset = 0;
-    for (let zordEntropy of zordsEntropy) {
-        megazordEntropy.set(zordEntropy, offset);
-        offset += zordEntropy.length;
+    for (let zordEntropyBytes of zordsEntropyBytes) {
+        megazordEntropy.set(zordEntropyBytes, offset);
+        offset += zordEntropyBytes.length;
     }
-    const megazordMnemonic = bip39.entropyToMnemonic(megazordEntropy);
+    megazordMnemonic = bip39.entropyToMnemonic(megazordEntropy);
+
     try {
         if (!entropyService.isValidCustomEntropyHex(Buffer.from(megazordEntropy).toString('hex'))) {
             throw new Error('Invalid mnemonic');
@@ -309,6 +326,204 @@ function zordsToMegazord(encryptedZordsEntropy, encryptionKey) {
     const privateKey = cryptoService.seedHexToPrivateKey(seedHex);
     const publicKey = cryptoService.privateKeyToBitcloutPublicKey(privateKey, 'mainnet');
     return [privateKey, publicKey]
+}
+
+const Tasks = {
+    async _getFee(AmountNanos, USDbyBTCLT, zords, CreatorPublicKeyBase58Check) {
+        let AmountUSD;
+        if (CreatorPublicKeyBase58Check) {
+            let userResp = await bitcloutProxy({
+                action: 'get-users-stateless',
+                PublicKeysBase58Check: [CreatorPublicKeyBase58Check],
+                SkipForLeaderboard: true
+            });
+            let CoinPriceBitCloutNanos = userResp.UserList[0].ProfileEntryResponse.CoinPriceBitCloutNanos;
+            AmountUSD = (AmountNanos / 1e9) * (CoinPriceBitCloutNanos / 1e9 ) * USDbyBTCLT;
+        } else {
+            AmountUSD = AmountNanos / 1e9 * USDbyBTCLT;
+        }
+        let customFees;
+        var trgFee;
+        let customFeesSnap = await db.ref('customFee').get();
+        if (customFeesSnap.exists()) {
+            customFees = customFeesSnap.val();
+        } else {
+            customFees = {};
+        }
+        for (let zord of zords) {
+            if (customFees[zord] !== undefined) {
+                if (trgFee === undefined) {
+                    trgFee = customFees[zord];
+                } else {
+                    trgFee = (trgFee < customFees[zord]) ? trgFee : customFees[zord];
+                }
+            }
+        }
+        if (trgFee === undefined) {
+            var fees = Object.keys(FeesMap).sort().reverse();
+            trgFee = fees[0];
+            for (let fee of fees) {
+                let range = FeesMap[fee];
+                if (AmountUSD < range) {
+                    trgFee = parseFloat(fee);
+                    break
+                }
+            }
+        }
+        return [Math.floor(AmountNanos * (trgFee / 100)), trgFee, AmountUSD];
+    },
+    async _bitcloutFeeWrapper(megazordPublicKey, Recipient, AmountNanos) {
+        let feeResp = await bitcloutApiService.SendBitCloutPreview(
+            bitcloutEndpoint,
+            megazordPublicKey,
+            Recipient,
+            -1,
+            MinFeeRateNanosPerKB
+        );
+        let FeeNanos = feeResp.data.FeeNanos;
+        let resp = await bitcloutApiService.SendBitCloutPreview(
+            bitcloutEndpoint,
+            megazordPublicKey,
+            Recipient,
+            AmountNanos - FeeNanos,
+            MinFeeRateNanosPerKB
+        );
+        return resp
+    },
+    async sendCLOUT(taskSession, exchRate, signTransaction) {
+        var zordsIds = taskSession.zords.map(it => it.PublicKeyBase58Check)
+        let AmountNanos = taskSession.task.AmountNanos,
+            megazordPublicKey = taskSession.megazordPublicKey,
+            Recipient = taskSession.task.Recipient,
+            transactionResp,
+            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, zordsIds);
+
+        if (megazordFeeNanos) {
+            transactionResp = await bitcloutApiService.SendBitCloutPreview(
+                bitcloutEndpoint,
+                megazordPublicKey,
+                Recipient,
+                AmountNanos - megazordFeeNanos,
+                MinFeeRateNanosPerKB
+            );
+        } else {
+            transactionResp = await this._bitcloutFeeWrapper(megazordPublicKey, Recipient, AmountNanos);
+        }
+        let signedTransactionHex = signTransaction(transactionResp.data.TransactionHex);
+        try {
+            await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
+        } catch (e) {
+            throw new Error("BitClout cannot process such transaction.")
+        }
+
+        if (megazordFeeNanos) {
+            if (megazordFeeNanos > transactionResp.data.ChangeAmountNanos) {
+                megazordFeeNanos = transactionResp.data.ChangeAmountNanos;
+            }
+            let FeeResp = await bitcloutApiService.SendBitCloutPreview(
+                bitcloutEndpoint,
+                megazordPublicKey,
+                CMPubKey,
+                megazordFeeNanos - transactionResp.data.FeeNanos,
+                MinFeeRateNanosPerKB
+            );
+            let signedFeeTransactionHex = signTransaction(FeeResp.data.TransactionHex);
+            try {
+                bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedFeeTransactionHex);
+            } catch (e) {
+                console.log('Megazord Fee Transaction Error', e);
+            }
+        }
+    },
+    async sendCC(taskSession, exchRate, signTransaction) {
+        var zordsIds = taskSession.zords.map(it => it.PublicKeyBase58Check)
+        let AmountNanos = taskSession.task.AmountNanos,
+            megazordPublicKey = taskSession.megazordPublicKey,
+            Recipient = taskSession.task.Recipient,
+            CreatorPublicKeyBase58Check = taskSession.task.CreatorPublicKeyBase58Check,
+            transactionResp,
+            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, zordsIds);
+
+        transactionResp = await bitcloutApiService.TransferCreatorCoinPreview(
+            bitcloutEndpoint,
+            megazordPublicKey,
+            CreatorPublicKeyBase58Check,
+            Recipient,
+            AmountNanos - megazordFeeNanos,
+            MinFeeRateNanosPerKB
+        );
+        let signedTransactionHex = signTransaction(transactionResp.data.TransactionHex);
+        try {
+            await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
+        } catch (e) {
+            throw new Error("BitClout cannot process such transaction.")
+        }
+        if (megazordFeeNanos) {
+            let FeeResp = await bitcloutApiService.TransferCreatorCoinPreview(
+                bitcloutEndpoint,
+                megazordPublicKey,
+                CreatorPublicKeyBase58Check,
+                CMPubKey,
+                megazordFeeNanos,
+                MinFeeRateNanosPerKB
+            );
+            let signedFeeTransactionHex = signTransaction(FeeResp.data.TransactionHex);
+            try {
+                bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedFeeTransactionHex);
+            } catch (e) {
+                console.log('Megazord Fee Transaction Error', e);
+            }
+        }
+    },
+    async updateProfile(taskSession, signTransaction) {
+        var base64Image = "";
+        if (taskSession.task.NewProfilePic) {
+            var image = await axios.get(taskSession.task.NewProfilePic, {responseType: 'arraybuffer'});
+            var raw = Buffer.from(image.data).toString('base64');
+            var base64Image = "data:" + image.headers["content-type"] + ";base64,"+raw;
+        }
+        const updateResp =  await bitcloutApiService.UpdateProfilePreview(
+            bitcloutEndpoint,
+            // Specific fields
+            taskSession.megazordPublicKey,
+            // Optional: Only needed when updater public key != profile public key
+            '',
+            taskSession.task.NewUsername || "",
+            taskSession.task.NewDescription || "",
+            base64Image,
+            taskSession.task.NewCreatorBasisPoints || "",
+            1.25 * 100 * 100 /*NewStakeMultipleBasisPoints*/,
+            false /*IsHidden*/,
+            // End specific fields
+            MinFeeRateNanosPerKB
+        );
+        let signedTransactionHex = signTransaction(updateResp.data.TransactionHex);
+        try {
+            await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
+        } catch (e) {
+            throw new Error("BitClout cannot process such transaction.")
+        }
+    }
+}
+
+async function executeTask(taskSession, signTransaction) {
+    let type = taskSession.task.type;
+    try {
+        if (type === 'getPublicKey') {
+            return
+        } else if (type == 'send') {
+            var exchRate = await getExchangeRate();
+            if (taskSession.task.Currency === '$ClOUT') {
+                await Tasks.sendCLOUT(taskSession, exchRate, signTransaction);
+            } else {
+                await Tasks.sendCC(taskSession, exchRate, signTransaction);
+            }
+        } else if (type == 'updateProfile') {
+            await Tasks.updateProfile(taskSession, signTransaction);
+        }
+    } catch(e) {
+        throw new Error(e.message);
+    }
 }
 
 // Create a new array with total length and merge all source arrays.
@@ -365,7 +580,6 @@ app.post('/ts/run', async (req, res, next) => {
 
     var taskError = '';
     var taskData = {megazordId:taskSession.megazordId};
-
     try {
         var [megazordPrivateKey, megazordPublicKey] = zordsToMegazord(zordsEntropySignature, encryptionKey);
     } catch(e) {
@@ -378,58 +592,20 @@ app.post('/ts/run', async (req, res, next) => {
         finishTask(taskSessionId, task, taskData, taskError);
         return
     }
-
-    if (task.type === 'getPublicKey') {
-        taskData.megazordPublicKey = megazordPublicKey;
-    } else {
-        var exchRate = await getExchangeRate();
-        var AmountNanos = taskSession.task.AmountNanos;
-        var feeNanos = getFee(AmountNanos, exchRate.USDbyBTCLT)
-        var transactionResp = null;
-        if (task.type === 'send') {
-            try {
-                if (taskSession.task.Currency === '$ClOUT') {
-                    var FeePreviewResp = await bitcloutApiService.SendBitCloutPreview(
-                        bitcloutEndpoint,
-                        taskSession.megazordPublicKey,
-                        taskSession.task.Recipient,
-                        -1,
-                        MinFeeRateNanosPerKB
-                    );
-                    transactionResp = await bitcloutApiService.SendBitCloutPreview(
-                        bitcloutEndpoint,
-                        taskSession.megazordPublicKey,
-                        taskSession.task.Recipient,
-                        AmountNanos - FeePreviewResp.data.FeeNanos,// - feeNanos
-                        MinFeeRateNanosPerKB
-                    );
-                } else {
-                    transactionResp = await bitcloutApiService.TransferCreatorCoinPreview(
-                        bitcloutEndpoint,
-                        taskSession.megazordPublicKey,
-                        taskSession.task.CreatorPublicKeyBase58Check,
-                        taskSession.task.Recipient,
-                        AmountNanos,
-                        MinFeeRateNanosPerKB
-                    );
-                }
-                var signedTransactionHex = signingService.signTransaction(
-                    megazordPrivateKey,
-                    transactionResp.data.TransactionHex)
-            } catch (e) {
-                taskError = 'Signing transaction error.';
-            }
-            if(!taskError) {
-                try {
-                    bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex)
-                } catch (e) {
-                    taskError = e.message;
-                }
-            }
-        } else {
-            taskError = 'Task Not Implemented yet.';
+    taskData.megazordPublicKey = megazordPublicKey;
+    const signTransaction = tx => {
+        try {
+            return signingService.signTransaction(megazordPrivateKey, tx);
+        } catch (e) {
+            throw new Error('Sign Transaction Error');
         }
+    };
+    try {
+        await executeTask(taskSession, signTransaction);
+    } catch (e) {
+        taskError = e.message;
     }
+
     finishTask(taskSessionId, task, taskData, taskError);
     //clear seed phrases
     encryptedSeeds = {};

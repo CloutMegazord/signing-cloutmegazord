@@ -190,6 +190,37 @@ class BackendApiService {
             });
     }
 
+    UpdateProfilePreview(
+        endpoint,
+        // Specific fields
+        UpdaterPublicKeyBase58Check,
+        // Optional: Only needed when updater public key != profile public key
+        ProfilePublicKeyBase58Check,
+        NewUsername,
+        NewDescription,
+        NewProfilePic,
+        NewCreatorBasisPoints,
+        NewStakeMultipleBasisPoints,
+        IsHidden,
+        // End specific fields
+        MinFeeRateNanosPerKB
+      ) {
+        NewCreatorBasisPoints = Math.floor(NewCreatorBasisPoints);
+        NewStakeMultipleBasisPoints = Math.floor(NewStakeMultipleBasisPoints);
+
+        return this.post(endpoint, BackendRoutes.RoutePathUpdateProfile, {
+          UpdaterPublicKeyBase58Check,
+          ProfilePublicKeyBase58Check,
+          NewUsername,
+          NewDescription,
+          NewProfilePic,
+          NewCreatorBasisPoints,
+          NewStakeMultipleBasisPoints,
+          IsHidden,
+          MinFeeRateNanosPerKB,
+        });
+      }
+
     SubmitTransaction(endpoint, TransactionHex) {
         return this.post(endpoint, BackendRoutes.RoutePathSubmitTransaction, {
             TransactionHex,
