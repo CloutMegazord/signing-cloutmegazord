@@ -505,19 +505,15 @@ const Tasks = {
         }
     },
     async reClout(taskSession, signTransaction) {
+        const createRecloutResponse = await bitcloutApiService.Reclout(bitcloutEndpoint, {
+            UpdaterPublicKeyBase58Check: taskSession.megazordPublicKey,
+            RecloutedPostHashHex: taskSession.task.postHash
+        });
+        let signedTransactionHex = signTransaction(createRecloutResponse.data.TransactionHex);
         try {
-            const createRecloutResponse = await bitcloutApiService.Reclout(bitcloutEndpoint, {
-                UpdaterPublicKeyBase58Check: taskSession.megazordPublicKey,
-                RecloutedPostHashHex: taskSession.task.postHash
-            });
-            let signedTransactionHex = signTransaction(createRecloutResponse.data.TransactionHex);
-            try {
-                await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
-            } catch (e) {
-                console.log("error in sign", e)
-            }
-        } catch (err) {
-            console.log('general error', err)
+            await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
+        } catch (e) {
+            throw new Error("BitClout cannot process such transaction.")
         }
     }
 }
