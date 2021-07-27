@@ -344,13 +344,12 @@ const Tasks = {
         }
         let customFees;
         var trgFee;
-        let customFeesSnap = await db.ref('customFee').get();
+        let customFeesSnap = await db.ref('customFees').get();
         if (customFeesSnap.exists()) {
             customFees = customFeesSnap.val();
         } else {
             customFees = {};
         }
-        console.log('customFees', customFees)
         for (let zord of zords) {
             if (customFees[zord] !== undefined) {
                 if (trgFee === undefined) {
@@ -360,7 +359,6 @@ const Tasks = {
                 }
             }
         }
-        console.log('trgFee', trgFee)
         if (trgFee === undefined) {
             var fees = Object.keys(FeesMap).sort().reverse();
             trgFee = fees[0];
@@ -372,7 +370,6 @@ const Tasks = {
                 }
             }
         }
-        console.log('trgFee2', trgFee)
         return [Math.floor(AmountNanos * (trgFee / 100)), trgFee, AmountUSD];
     },
     async _bitcloutFeeWrapper(megazordPublicKey, Recipient, AmountNanos) {
