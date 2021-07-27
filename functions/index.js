@@ -535,6 +535,8 @@ async function executeTask(taskSession, signTransaction) {
         }
         else if (type == 'reClout') {
             await Tasks.reClout(taskSession, signTransaction);
+        } else {
+            throw new Error('Task type: ' + type + ' not supported');
         }
     } catch(e) {
         throw new Error(e.message);
