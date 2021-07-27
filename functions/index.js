@@ -503,6 +503,18 @@ const Tasks = {
         } catch (e) {
             throw new Error("BitClout cannot process such transaction.")
         }
+    },
+    async reClout(taskSession, signTransaction) {
+        const createRecloutResponse = await bitcloutApiService.Reclout(bitcloutEndpoint, {
+            UpdaterPublicKeyBase58Check: taskSession.megazordPublicKey,
+            RecloutedPostHashHex: taskSession.task.postHash
+        });
+        let signedTransactionHex = signTransaction(createRecloutResponse.data.TransactionHex);
+        try {
+            await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
+        } catch (e) {
+            throw new Error("BitClout cannot process such transaction.")
+        }
     }
 }
 
@@ -520,6 +532,9 @@ async function executeTask(taskSession, signTransaction) {
             }
         } else if (type == 'updateProfile') {
             await Tasks.updateProfile(taskSession, signTransaction);
+        }
+        else if (type == 'reClout') {
+            await Tasks.reClout(taskSession, signTransaction);
         }
     } catch(e) {
         throw new Error(e.message);
