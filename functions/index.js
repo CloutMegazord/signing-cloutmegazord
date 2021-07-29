@@ -19,6 +19,7 @@ const signingService = new SigningService();
 const BitCloutApiToken = functions.config().bitclout?.apitoken;
 
 console.log('BitCloutApiToken: ', BitCloutApiToken);
+
 const bitcloutApiService = new BackendApiService({
     post: (endpoint, data) => {
         return axios.post(endpoint, data, {
