@@ -35,7 +35,6 @@ const db = admin.database();
 const config = functions.config();
 
 const BitCloutApiToken = config.bitclout ? config.bitclout.apitoken : '';
-console.log('BitCloutApiToken: ', BitCloutApiToken);
 //Protected functionality.
 
 const CMPubKey = 'BC1YLfkW18ToVc1HD2wQHxY887Zv1iUZMf17QHucd6PaC3ZxZdQ6htE';
