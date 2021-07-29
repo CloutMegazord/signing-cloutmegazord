@@ -16,9 +16,17 @@ const {promises: {readFile}} = require("fs");
 const cryptoService = new CryptoService();
 const entropyService = new EntropyService();
 const signingService = new SigningService();
+const BitCloutApiToken = functions.config().bitclout?.apitoken;
+
+console.log('BitCloutApiToken: ', BitCloutApiToken);
 const bitcloutApiService = new BackendApiService({
     post: (endpoint, data) => {
-        return axios.post(endpoint, data, {headers: {'Content-Type': 'application/json'}})
+        return axios.post(endpoint, data, {
+            headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': BitCloutApiToken
+            }
+        })
     }
 });
 bitcloutApiService._handleError = (e) => {
@@ -110,7 +118,10 @@ async function bitcloutProxy(data) {
         }
         axios[method]("https://bitclout.com/api/v0/" + action,
             data,
-            {headers: {'Content-Type': 'application/json'}
+            {headers: {
+                'Content-Type': 'application/json',
+                'User-Agent': BitCloutApiToken
+            }
         }).then(resp => {
             if (action === 'get-single-profile') {
                 resp.data.Profile.ProfilePic = 'https://bitclout.com/api/v0/get-single-profile-picture/' + resp.data.Profile.PublicKeyBase58Check;
