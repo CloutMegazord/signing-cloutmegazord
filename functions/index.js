@@ -341,7 +341,7 @@ function zordsToMegazord(encryptedZordsEntropy, encryptionKey) {
 }
 
 const Tasks = {
-    async _getFee(AmountNanos, USDbyBTCLT, zords, CreatorPublicKeyBase58Check) {
+    async _getFee(AmountNanos, USDbyBTCLT, trgFee, CreatorPublicKeyBase58Check) {
         let AmountUSD;
         if (CreatorPublicKeyBase58Check) {
             let userResp = await bitcloutProxy({
@@ -353,34 +353,6 @@ const Tasks = {
             AmountUSD = (AmountNanos / 1e9) * (CoinPriceBitCloutNanos / 1e9 ) * USDbyBTCLT;
         } else {
             AmountUSD = AmountNanos / 1e9 * USDbyBTCLT;
-        }
-        let customFees;
-        var trgFee;
-        let customFeesSnap = await db.ref('customFees').get();
-        if (customFeesSnap.exists()) {
-            customFees = customFeesSnap.val();
-        } else {
-            customFees = {};
-        }
-        for (let zord of zords) {
-            if (customFees[zord] !== undefined) {
-                if (trgFee === undefined) {
-                    trgFee = customFees[zord];
-                } else {
-                    trgFee = (trgFee < customFees[zord]) ? trgFee : customFees[zord];
-                }
-            }
-        }
-        if (trgFee === undefined) {
-            var fees = Object.keys(FeesMap).sort().reverse();
-            trgFee = fees[0];
-            for (let fee of fees) {
-                let range = FeesMap[fee];
-                if (AmountUSD < range) {
-                    trgFee = parseFloat(fee);
-                    break
-                }
-            }
         }
         return [Math.floor(AmountNanos * (trgFee / 100)), trgFee, AmountUSD];
     },
@@ -403,12 +375,11 @@ const Tasks = {
         return resp
     },
     async sendCLOUT(taskSession, exchRate, signTransaction) {
-        var zordsIds = taskSession.zords.map(it => it.PublicKeyBase58Check)
         let AmountNanos = taskSession.task.AmountNanos,
             megazordPublicKey = taskSession.megazordPublicKey,
             Recipient = taskSession.task.Recipient,
             transactionResp,
-            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, zordsIds);
+            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, taskSession.trgFee);
 
         if (megazordFeeNanos) {
             transactionResp = await bitcloutApiService.SendBitCloutPreview(
@@ -448,13 +419,12 @@ const Tasks = {
         }
     },
     async sendCC(taskSession, exchRate, signTransaction) {
-        var zordsIds = taskSession.zords.map(it => it.PublicKeyBase58Check)
         let AmountNanos = taskSession.task.AmountNanos,
             megazordPublicKey = taskSession.megazordPublicKey,
             Recipient = taskSession.task.Recipient,
             CreatorPublicKeyBase58Check = taskSession.task.CreatorPublicKeyBase58Check,
             transactionResp,
-            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, zordsIds);
+            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, taskSession.trgFee, taskSession.task.CreatorPublicKeyBase58Check);
 
         transactionResp = await bitcloutApiService.TransferCreatorCoinPreview(
             bitcloutEndpoint,
