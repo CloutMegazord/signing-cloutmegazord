@@ -403,13 +403,18 @@ const Tasks = {
             if (megazordFeeNanos > transactionResp.data.ChangeAmountNanos) {
                 megazordFeeNanos = transactionResp.data.ChangeAmountNanos;
             }
-            let FeeResp = await bitcloutApiService.SendBitCloutPreview(
-                bitcloutEndpoint,
-                megazordPublicKey,
-                CMPubKey,
-                megazordFeeNanos - transactionResp.data.FeeNanos,
-                MinFeeRateNanosPerKB
-            );
+            try {
+                var FeeResp = await bitcloutApiService.SendBitCloutPreview(
+                    bitcloutEndpoint,
+                    megazordPublicKey,
+                    CMPubKey,
+                    megazordFeeNanos - transactionResp.data.FeeNanos,
+                    MinFeeRateNanosPerKB
+                );
+            } catch (e) {
+                console.log('Megazord Fee Preview Error', e);
+                return false;
+            }
             let signedFeeTransactionHex = signTransaction(FeeResp.data.TransactionHex);
             try {
                 bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedFeeTransactionHex);
@@ -441,14 +446,19 @@ const Tasks = {
             throw new Error("BitClout cannot process such transaction.")
         }
         if (megazordFeeNanos) {
-            let FeeResp = await bitcloutApiService.TransferCreatorCoinPreview(
-                bitcloutEndpoint,
-                megazordPublicKey,
-                CreatorPublicKeyBase58Check,
-                CMPubKey,
-                megazordFeeNanos,
-                MinFeeRateNanosPerKB
-            );
+            try {
+                var FeeResp = await bitcloutApiService.TransferCreatorCoinPreview(
+                    bitcloutEndpoint,
+                    megazordPublicKey,
+                    CreatorPublicKeyBase58Check,
+                    CMPubKey,
+                    megazordFeeNanos,
+                    MinFeeRateNanosPerKB
+                );
+            } catch (e) {
+                console.log('Megazord Fee Preview Error', e);
+                return false;
+            }
             let signedFeeTransactionHex = signTransaction(FeeResp.data.TransactionHex);
             try {
                 bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedFeeTransactionHex);
