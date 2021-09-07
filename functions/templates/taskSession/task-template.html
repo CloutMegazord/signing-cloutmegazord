@@ -270,10 +270,39 @@
             }).then(res => res.json())
         }
 
+        function getUserKeyPair() {
+            let userKeyPair = localStorage.getItem('userKeyPair');
+            if (userKeyPair) {
+                return JSON.parse(userKeyPair)
+            }
+            const userKeyPair = cryptoBrowserify.generateKeyPairSync('rsa', {
+                    modulusLength: 4096,
+                    publicKeyEncoding: {
+                    type: 'pkcs1',
+                    format: 'pem',
+                },
+                    privateKeyEncoding: {
+                    type: 'pkcs1',
+                    format: 'pem',
+                    cipher: 'aes-256-cbc',
+                    passphrase: '',
+                }
+            });
+            localStorage.setItem('userKeyPair', JSON.stringify(userKeyPair));
+            return userKeyPair
+        }
+
+        function getEncryptionKey() {
+            let userKeyPair = localStorage.getItem('userKeyPair');
+        }
+
         const taskSession = "%taskSession%";
         var query
         var isFinished = false;
-        var trgZord = null
+        var trgZord = null;
+        const {privateKey, publicKey} = getUserKeyPair();
+        const {privateKey, publicKey} = getEncryptionKey();
+        const encryptionKey = cryptoBrowserify.randomBytes(16).toString('hex');
 
         query = window.location.pathname.split('/').pop();
         const urlParams = new URLSearchParams(window.location.search);

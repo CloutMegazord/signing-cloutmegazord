@@ -154,9 +154,7 @@ async function getExchangeRate() {
 }
 
 app.get('/ts/get', async function(req, res) {
-    const taskSessionId = req.query.tid;
-    const zordShrtId = req.query.zid;
-    const encryptionKey = req.query.k;
+    const taskSessionId = req.query.sid;
     var taskSession = null;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     if (taskSessionRef.exists()) {
@@ -164,14 +162,6 @@ app.get('/ts/get', async function(req, res) {
     } else {
         res.write('Task Session not exists or expired');
         res.end();
-    }
-    if(!encryptionKey) {
-        if (zordShrtId === taskSession.initiator.shrtId) {
-            res.redirect(req.originalUrl + '&k=' + crypto.randomBytes(16).toString('hex'));
-        } else {
-            res.write(`Task Session already running. Ask @${taskSession.initiator.Username} for personal link.`);
-        }
-        return;
     }
     try {
         var template = await readFile("./templates/taskSession/task-template.html");
@@ -192,51 +182,17 @@ app.get('/ts/get', async function(req, res) {
     res.end();
 })
 
-// var taskSession = {
-//     taskId: taskId,
-//     initiator: {publicKey},
-//     megazordId: data.megazordId,
-//     task: dbTask,
-//     readyZordsShrtIds: [],
-//     endPoint: functionsUrl,
-//     redirect: '/admin/tasks_list/' + data.megazordId
-// }
-// zord ={
-//     PubKeyShort: zordId.slice(0, 14) + '...',
-//     PublicKeyBase58Check: zordId,
-//     shrtId: shrtId,
-//     Username: profileRes.Profile.Username,
-//     ProfilePic: profileRes.Profile.ProfilePic,
-//     link: `/gts/${taskShrtId}&${shrtId}&${encryptionKey}`
-// }
-
 app.post('/ts/create', async (req, res, next) => {
     const data = req.body.data;
     var taskSession = null;
-    const taskId = data.taskId;
-    const taskSessionRef = await db.ref('taskSessions/' + taskId).get();
-    if (taskSessionRef.exists()) {
-        taskSession = taskSessionRef.val()
-        if (taskSession.initiator.publicKey !== data.taskSession.initiator.publicKey) {
-            res.send({data: { error: `Task Session already running. Ask ${taskSession.initiator.Username} for personal link.`}})
-            return
-        }
+    let taskSession = data.taskSession;
+    taskSession.ready = {
+        enctyptedEnctyptionKeys: {},
+        zordsSessPubKeys:  {}
     }
-    taskSession = data.taskSession;
-    taskSession.expire = Date.now() + taskSessionsExpire;
-    await db.ref('taskSessions').child(taskId).set(taskSession);
-    res.send({ok: true, expire: taskSession.expire});
-});
-
-app.post('/ts/getTaskSession', async (req, res, next) => {
-    const taskId = req.data.taskId;
-    const taskSessionRef = await db.ref('taskSessions/' + taskId).get();
-    if (taskSessionRef.exists()) {
-        taskSession = taskSessionRef.val()
-        res.send({data: taskSession})
-        return
-    }
-    res.send({data: null})
+    const taskSessionRef = await db.ref('taskSessions').push(taskSession);
+    const sessionId =  taskSessionRef.key;
+    res.send({ok: true, expire: taskSession.expire, sessionId});
 });
 
 app.post('/ts/getFee', async (req, res, next) => {
@@ -247,20 +203,35 @@ app.post('/ts/getFee', async (req, res, next) => {
 });
 
 app.post('/ts/check', async (req, res, next) => {
-    var {taskSessionId, zordShrtId} = req.body.data;
+    var {taskSessionId, zordShrtId, zordSessPubKey} = req.body.data;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     if (!taskSessionRef.exists()) {
         res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
     var taskSession = taskSessionRef.val()
-    taskSession.readyZordsShrtIds = taskSession.readyZordsShrtIds || [];
-    if (taskSession.readyZordsShrtIds.length == taskSession.zords.length) {
-        res.send({data: { ok: true }})
+    let ready = taskSession.ready;
+    if (zordShrtId === taskSession.initiator.shrtId) {
+
+    } else {
+        if ((zordShrtId in ready.zordsSessPubKeys) === false) {
+            ready.zordsSessPubKeys[zordShrtId] = zordSessPubKey;
+            db.ref('taskSessions/' + taskSessionId).child('ready').set(ready);
+            res.send({data: {readyZordsShrtIds: [...Object.keys(ready.zordsSessPubKeys), taskSession.initiator.shrtId]}});
+            return
+        }
+        if (Object.keys(taskSession.).length == taskSession.zords.length) {
+
+        }
+    }
+    taskSession.readyZordsShrtIds = taskSession.readyZords || {};
+
+    if (Object.keys(taskSession.).length == taskSession.zords.length) {
+        res.send({data: { ok: true,  enctyptedEnctyptionKey: taskSession.readyZords[zordShrtId].enctyptedEnctyptionKey }})
         return
     }
     if (!taskSession.readyZordsShrtIds.includes(zordShrtId)) {
-        taskSession.readyZordsShrtIds.push(zordShrtId)
+        taskSession.readyZordsShrtIds.push({zordShrtId:zordSessPubKey})
         db.ref('taskSessions/' + taskSessionId).child('readyZordsShrtIds').set(taskSession.readyZordsShrtIds);
     }
     res.send({data: {readyZordsShrtIds: taskSession.readyZordsShrtIds}});
@@ -627,3 +598,21 @@ exports.taskSessions = functions.https.onRequest(app);
 //     res.send('Page!');
 //     res.end();
 // });
+
+// var taskSession = {
+//     taskId: taskId,
+//     initiator: {publicKey},
+//     megazordId: data.megazordId,
+//     task: dbTask,
+//     readyZordsShrtIds: [],
+//     endPoint: functionsUrl,
+//     redirect: '/admin/tasks_list/' + data.megazordId
+// }
+// zord ={
+//     PubKeyShort: zordId.slice(0, 14) + '...',
+//     PublicKeyBase58Check: zordId,
+//     shrtId: shrtId,
+//     Username: profileRes.Profile.Username,
+//     ProfilePic: profileRes.Profile.ProfilePic,
+//     link: `/gts/${taskShrtId}&${shrtId}&${encryptionKey}`
+// }
