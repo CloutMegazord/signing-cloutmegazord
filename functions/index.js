@@ -17,6 +17,7 @@ const cryptoService = new CryptoService();
 const entropyService = new EntropyService();
 const signingService = new SigningService();
 
+axios.defaults.timeout = 5 * 60 * 1000;
 const bitcloutApiService = new BackendApiService({
     post: (endpoint, data) => {
         return axios.post(endpoint, data, {
