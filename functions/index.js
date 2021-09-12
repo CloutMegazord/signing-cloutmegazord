@@ -203,36 +203,33 @@ app.post('/ts/getFee', async (req, res, next) => {
 });
 
 app.post('/ts/check', async (req, res, next) => {
-    var {taskSessionId, zordShrtId, zordSessPubKey} = req.body.data;
+    var {taskSessionId, zordShrtId, zordSessPubKey, zordsEncrypedEncryptionKeys} = req.body.data;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     if (!taskSessionRef.exists()) {
         res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
     var taskSession = taskSessionRef.val()
-    let ready = taskSession.ready;
+    let zords = taskSession.zords;
+    let zordsSessPubKeys = Object.keys(taskSession.zordsSessPubKeys);
     if (zordShrtId === taskSession.initiator.shrtId) {
-
-    } else {
-        if ((zordShrtId in ready.zordsSessPubKeys) === false) {
-            ready.zordsSessPubKeys[zordShrtId] = zordSessPubKey;
-            db.ref('taskSessions/' + taskSessionId).child('ready').set(ready);
-            res.send({data: {readyZordsShrtIds: [...Object.keys(ready.zordsSessPubKeys), taskSession.initiator.shrtId]}});
+        if (zordsEncrypedEncryptionKeys) {
+            db.ref('taskSessions/' + taskSessionId).child('zordsEncrypedEncryptionKeys').set(zordsEncrypedEncryptionKeys);
+            res.send({data: {ok: true}});
+            return
+        } else if (zords.filter(x => zordsSessPubKeys.has(x)).length === zords.length) {
+            res.send({data: {zordsSessPubKeys}});
             return
         }
-        if (Object.keys(taskSession.).length == taskSession.zords.length) {
-
+    } else {
+        if (taskSession.zordsEncrypedEncryptionKeys) {
+            res.send({data: {ok: true,  encrypedEncryptionKey: taskSession.zordsEncrypedEncryptionKeys[zordShrtId]}});
+            return
         }
-    }
-    taskSession.readyZordsShrtIds = taskSession.readyZords || {};
-
-    if (Object.keys(taskSession.).length == taskSession.zords.length) {
-        res.send({data: { ok: true,  enctyptedEnctyptionKey: taskSession.readyZords[zordShrtId].enctyptedEnctyptionKey }})
-        return
-    }
-    if (!taskSession.readyZordsShrtIds.includes(zordShrtId)) {
-        taskSession.readyZordsShrtIds.push({zordShrtId:zordSessPubKey})
-        db.ref('taskSessions/' + taskSessionId).child('readyZordsShrtIds').set(taskSession.readyZordsShrtIds);
+        if ((zordShrtId in taskSession.zordsSessPubKeys) === false) {
+            taskSession.zordsSessPubKeys[zordShrtId] = zordSessPubKey;
+            db.ref('taskSessions/' + taskSessionId).child('zordsSessPubKeys').set(taskSession.zordsSessPubKeys);
+        }
     }
     res.send({data: {readyZordsShrtIds: taskSession.readyZordsShrtIds}});
 });
