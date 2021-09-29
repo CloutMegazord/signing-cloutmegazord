@@ -224,9 +224,26 @@
             <p class="center_text">Your Username: <span id="current_username"></span></p>
             <!-- <h4>Your Pub Key: <span id="yourPubKey"></span></h4> -->
             <div class="links_section">
-                <p id='provideMessage' class="center_text">
-                    Provide personal links (below) to other Megazord co-owners before Signing Task.
-                </p>
+
+                <!-- var linkInput = document.createElement('input');
+                var linkLabel = document.createElement('label');
+                var copyBtn = document.createElement('div');
+                copyBtn.classList = 'copy-btn';
+                linkInput.classList = 'link-input';
+                linkInput.id = zordName + '_link'
+                linkLabel.classList = 'link-label';
+                linkLabel.for=zordName + '_link'
+
+                linkLabel.innerText =  zordName + ' personal link:'
+
+                copyBtn.innerText = 'Click here for copy link';
+                linkInput.type="url";
+                linkInput.value = linkHref; -->
+                <div>
+                    <label for='zord-link' class='link-label'>Provide this signing link to other Zords</label>
+                    <input class='link-input' id='zord-link' type='url' value='https://www.c.com'/>
+                    <div class="copy-btn">Click here for copy link</div>
+                </div>
                 <!-- <p class="center_text">Other Zords:</p> -->
                 <ul id='zords_links'></ul>
             </div>
@@ -294,13 +311,6 @@
                 const exportedPublicKeyAsBase64 = window.btoa(exportedPublicKeyAsString);
                 const pemPublicKeyExported = `-----BEGIN PUBLIC KEY-----\n${exportedPublicKeyAsBase64}\n-----END PUBLIC KEY-----`;
 
-                let input = 'test test'
-                let enc = new TextEncoder();
-                var bufferToEncrypt = enc.encode(input);
-                var encryptedBuffer = cryptoBrowserify.publicEncrypt(pemPublicKeyExported, bufferToEncrypt)
-                var decryptedBuffer = cryptoBrowserify.privateDecrypt(pemPrivateKeyExported, encryptedBuffer)
-                let decrypted = decryptedBuffer.toString()
-                debugger
                 return {pemPrivateKeyExported, pemPublicKeyExported}
             }
             async function getUserKeyPair() {
@@ -309,38 +319,27 @@
                     return JSON.parse(userKeyPair)
                 }
                 userKeyPair = await generateKeyPair()
-                debugger
-                // localStorage.setItem('userKeyPair', JSON.stringify(userKeyPair));
+                localStorage.setItem('userKeyPair', JSON.stringify(userKeyPair));
                 return userKeyPair
             }
 
             const taskSession = "%taskSession%";
-            var query
             var isFinished = false;
-            var trgZord = null;
-            const {privateKey, publicKey} = await getUserKeyPair();
-            debugger
-            const encryptionKey = cryptoBrowserify.randomBytes(16).toString('hex');
-            query = window.location.pathname.split('/').pop();
+            const trgZord = taskSession.trgZord;
+            const isTrgZordInitiator = taskSession.initiator.PublicKeyBase58Check === trgZord.PublicKeyBase58Check;
+            const query = window.location.pathname.split('/').pop();
             const urlParams = new URLSearchParams(window.location.search);
-            const [taskSessionId, shrtId] = [urlParams.get('tid'), urlParams.get('zid')];
-            // const [taskShrtId, shrtId, encryptionKey]  = query.split('&');
+            const [taskSessionId, zordSid] = [urlParams.get('tid'), urlParams.get('zsid')];
+            const {privateKey, publicKey} = await getUserKeyPair();
+            var zordsUl = document.getElementById('zords_links');
+
             document.getElementById('taskType').innerText = taskSession.task.type;
             document.getElementById('taskId').innerText = 'id: ' + taskSession.taskId;
             document.getElementById('description').innerText = taskSession.task.description;
-
-            // document.getElementById('yourPubKey').innerText = pubKey.slice(0, 14) + '...';
-            var zordsUl = document.getElementById('zords_links');
-            for (let zord of taskSession.zords) {
-                if (zord.shrtId === shrtId) {
-                    trgZord = zord;
-                    continue;
-                }
-            }
             if(!trgZord) {
                 alert('Somthing went wrong with this task session. Close it and try again later.')
             }
-            if (taskSession.initiator.publicKey !== trgZord.PublicKeyBase58Check) {
+            if (!isTrgZordInitiator) {
                 document.getElementById('provideMessage').style.display = 'none';
             } else {
                 for (let zord of taskSession.zords) {
@@ -352,10 +351,8 @@
                     let item = document.createElement('li')
                     // var img = document.createElement('img');
                     var details = document.createElement('details');
-                    var linkInput = document.createElement('input');
-                    var linkLabel = document.createElement('label');
+
                     var summary = document.createElement('summary');
-                    var copyBtn = document.createElement('div');
                     var info = document.createElement('div');
                     info.classList = 'sendLinkInfo';
                     function wrapper(link, linkInput) {
@@ -365,33 +362,17 @@
                         }
                     }
                     wrapper(linkHref, linkInput);
-                    copyBtn.classList = 'copy-btn';
-                    linkInput.classList = 'link-input';
-                    linkInput.id = zordName + '_link'
-                    linkLabel.classList = 'link-label';
                     function labelWrapper(linkInput, linkLabel) {
                         linkLabel.onclick = function() {
                             linkInput.select()
                         }
                     }
                     labelWrapper(linkInput, linkLabel);
-                    linkLabel.for=zordName + '_link'
-                    linkLabel.innerText =  zordName + ' personal link:'
-                    copyBtn.innerText = 'Click here for copy link';
-                    linkInput.type="url";
-                    linkInput.value = linkHref;
-                    info.innerText = 'Send copied link to ' + zordName + ' by any messenger.'
-                    // img.src=zord.ProfilePic;
-                    // img.classList = 'avatar';
-                    // item.innerText =  `
-                    //     ${zord.Username}
-                    //     ${zord.PubKeyShort}\n
-                    // `
-                    // 'Name: ' +zord.Username + ';\n Persanal Link: '+ window.location.origin + zord.link;
-                    // item.prepend(img)
-                    item.append(linkLabel)
-                    item.append(linkInput)
-                    item.append(copyBtn)
+
+                    info.innerText = 'Send copied link to ' + zordName + ' by any messenger.';
+                    // item.append(linkLabel)
+                    // item.append(linkInput)
+                    // item.append(copyBtn)
                     item.append(info)
                     // item.append(details)
                     zordsUl.appendChild(item)

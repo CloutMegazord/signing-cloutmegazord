@@ -155,10 +155,10 @@ async function getExchangeRate() {
 
 app.get('/ts/get', async function(req, res) {
     const taskSessionId = req.query.sid;
-    var taskSession = null;
+    var taskSession;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     if (taskSessionRef.exists()) {
-        taskSession = taskSessionRef.val();
+        taskSession = taskSessionRef.val().taskSession;
     } else {
         res.write('Task Session not exists or expired');
         res.end();
@@ -186,13 +186,10 @@ app.post('/ts/create', async (req, res, next) => {
     const data = req.body.data;
     var taskSession = null;
     let taskSession = data.taskSession;
-    taskSession.ready = {
-        enctyptedEnctyptionKeys: {},
-        zordsSessPubKeys:  {}
-    }
-    const taskSessionRef = await db.ref('taskSessions').push(taskSession);
+    let zsids = data.taskSession;
+    const taskSessionRef = await db.ref('taskSessions').push({taskSession, zsids});
     const sessionId =  taskSessionRef.key;
-    res.send({ok: true, expire: taskSession.expire, sessionId});
+    res.send({ok: true, sessionId});
 });
 
 app.post('/ts/getFee', async (req, res, next) => {
@@ -209,7 +206,7 @@ app.post('/ts/check', async (req, res, next) => {
         res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
-    var taskSession = taskSessionRef.val()
+    var {taskSession, zsids} = taskSessionRef.val()
     let zords = taskSession.zords;
     let zordsSessPubKeys = Object.keys(taskSession.zordsSessPubKeys);
     if (zordShrtId === taskSession.initiator.shrtId) {
@@ -513,7 +510,7 @@ app.post('/ts/run', async (req, res, next) => {
         res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
-    const taskSession = taskSessionRef.val();
+    const {taskSession, zsids} = taskSessionRef.val();
     const zordsCount = taskSession.zords.length;
     if (encryptedSeedsRef.exists()) {
         encryptedSeeds = encryptedSeedsRef.val();
