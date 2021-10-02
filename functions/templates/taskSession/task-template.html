@@ -224,26 +224,9 @@
             <p class="center_text">Your Username: <span id="current_username"></span></p>
             <!-- <h4>Your Pub Key: <span id="yourPubKey"></span></h4> -->
             <div class="links_section">
-
-                <!-- var linkInput = document.createElement('input');
-                var linkLabel = document.createElement('label');
-                var copyBtn = document.createElement('div');
-                copyBtn.classList = 'copy-btn';
-                linkInput.classList = 'link-input';
-                linkInput.id = zordName + '_link'
-                linkLabel.classList = 'link-label';
-                linkLabel.for=zordName + '_link'
-
-                linkLabel.innerText =  zordName + ' personal link:'
-
-                copyBtn.innerText = 'Click here for copy link';
-                linkInput.type="url";
-                linkInput.value = linkHref; -->
-                <div>
-                    <label for='zord-link' class='link-label'>Provide this signing link to other Zords</label>
-                    <input class='link-input' id='zord-link' type='url' value='https://www.c.com'/>
-                    <div class="copy-btn">Click here for copy link</div>
-                </div>
+                <p id='provideMessage' class="center_text">
+                    Provide personal signing links (below) to other Zords (co-owners).
+                </p>
                 <!-- <p class="center_text">Other Zords:</p> -->
                 <ul id='zords_links'></ul>
             </div>
@@ -304,15 +287,22 @@
                 const exportedPrivateKey = await window.crypto.subtle.exportKey("pkcs8", userKeyPair.privateKey);
                 const exportedPrivateKeyAsString = String.fromCharCode.apply(null, new Uint8Array(exportedPrivateKey));
                 const exportedPrivateKeyAsBase64 = window.btoa(exportedPrivateKeyAsString);
-                const pemPrivateKeyExported = `-----BEGIN PRIVATE KEY-----\n${exportedPrivateKeyAsBase64}\n-----END PRIVATE KEY-----`;
+                const privateKeyForEncryption = `-----BEGIN PRIVATE KEY-----\n${exportedPrivateKeyAsBase64}\n-----END PRIVATE KEY-----`;
 
                 const exportedPublicKey = await window.crypto.subtle.exportKey("spki", userKeyPair.publicKey);
                 const exportedPublicKeyAsString = String.fromCharCode.apply(null, new Uint8Array(exportedPublicKey));
                 const exportedPublicKeyAsBase64 = window.btoa(exportedPublicKeyAsString);
-                const pemPublicKeyExported = `-----BEGIN PUBLIC KEY-----\n${exportedPublicKeyAsBase64}\n-----END PUBLIC KEY-----`;
+                const publicKeyForEncryption = `-----BEGIN PUBLIC KEY-----\n${exportedPublicKeyAsBase64}\n-----END PUBLIC KEY-----`;
 
-                return {pemPrivateKeyExported, pemPublicKeyExported}
+                return {privateKeyForEncryption, publicKeyForEncryption}
             }
+
+            const fromHexString = hexString =>
+                new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+
+            const toHexString = bytes =>
+                bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '');
+
             async function getUserKeyPair() {
                 let userKeyPair = localStorage.getItem('userKeyPair');
                 if (userKeyPair) {
@@ -325,13 +315,15 @@
 
             const taskSession = "%taskSession%";
             var isFinished = false;
+            const {privateKeyForEncryption, publicKeyForEncryption} = await getUserKeyPair();
+            debugger
             const trgZord = taskSession.trgZord;
             const isTrgZordInitiator = taskSession.initiator.PublicKeyBase58Check === trgZord.PublicKeyBase58Check;
             const query = window.location.pathname.split('/').pop();
             const urlParams = new URLSearchParams(window.location.search);
             const [taskSessionId, zordSid] = [urlParams.get('tid'), urlParams.get('zsid')];
-            const {privateKey, publicKey} = await getUserKeyPair();
             var zordsUl = document.getElementById('zords_links');
+            var encryptionKeyBuffer = null;
 
             document.getElementById('taskType').innerText = taskSession.task.type;
             document.getElementById('taskId').innerText = 'id: ' + taskSession.taskId;
@@ -339,7 +331,9 @@
             if(!trgZord) {
                 alert('Somthing went wrong with this task session. Close it and try again later.')
             }
+            trgZord.zsid = zordSid;
             if (!isTrgZordInitiator) {
+                encryptionKeyBuffer = cryptoBrowserify.randomBytes(16);
                 document.getElementById('provideMessage').style.display = 'none';
             } else {
                 for (let zord of taskSession.zords) {
@@ -347,12 +341,14 @@
                         continue;
                     }
                     let zordName = zord.Username ? '@' + zord.Username : zord.PubKeyShort;
-                    var linkHref = zord.link + '&k='+encryptionKey;
+                    var linkHref = zord.link;
                     let item = document.createElement('li')
                     // var img = document.createElement('img');
                     var details = document.createElement('details');
-
+                    var linkInput = document.createElement('input');
+                    var linkLabel = document.createElement('label');
                     var summary = document.createElement('summary');
+                    var copyBtn = document.createElement('div');
                     var info = document.createElement('div');
                     info.classList = 'sendLinkInfo';
                     function wrapper(link, linkInput) {
@@ -362,17 +358,25 @@
                         }
                     }
                     wrapper(linkHref, linkInput);
+                    copyBtn.classList = 'copy-btn';
+                    linkInput.classList = 'link-input';
+                    linkInput.id = zordName + '_link'
+                    linkLabel.classList = 'link-label';
                     function labelWrapper(linkInput, linkLabel) {
                         linkLabel.onclick = function() {
                             linkInput.select()
                         }
                     }
                     labelWrapper(linkInput, linkLabel);
-
+                    linkLabel.for=zordName + '_link'
+                    linkLabel.innerText =  zordName + ' personal link:'
+                    copyBtn.innerText = 'Click here for copy link';
+                    linkInput.type="url";
+                    linkInput.value = linkHref;
                     info.innerText = 'Send copied link to ' + zordName + ' by any messenger.';
-                    // item.append(linkLabel)
-                    // item.append(linkInput)
-                    // item.append(copyBtn)
+                    item.append(linkLabel)
+                    item.append(linkInput)
+                    item.append(copyBtn)
                     item.append(info)
                     // item.append(details)
                     zordsUl.appendChild(item)
@@ -408,29 +412,51 @@
                         localStorage.setItem(localItemName, zordEntropyHex);
                     }
                 }
-                const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
-                var encryptedEntropy = cipher.update(zordEntropyHex).toString('hex');
-                zordEntropyHex = null;
 
                 document.getElementById('ready_button').style.display = 'none';
                 document.getElementById('remember_wrapper').style.display = 'none';
                 document.getElementById('inputSeed').disabled = true;
                 document.getElementById('ready_info').style.display = 'block';
 
+                setPublicKeyForEncryption
+                if (!isTrgZordInitiator) {
+                    await request('/ts/setPublicKeyForEncryption', {
+                        taskSessionId, zsid: trgZord.zsid, publicKeyForEncryption
+                    });
+                }
                 while (!isFinished) {
                     var res = await request('/ts/check', {
-                        taskSessionId, zordShrtId: trgZord.shrtId
+                        taskSessionId, zsid: trgZord.zsid,
                     });
+                    if (isTrgZordInitiator) {
+                        if (res.zordsPublicKeysForEncryption) {
+                            let encrypedEncryptionKeys = {}
+                            for (let [zsid, publicKeyForEncryption] of Object.entries(res.zordsPublicKeysForEncryption)) {
+                                let encrypedencryptionKeyBuffer = cryptoBrowserify.publicEncrypt(publicKeyForEncryption, encryptionKeyBuffer);
+                                encrypedEncryptionKeys[zsid] = toHexString(encrypedencryptionKeyBuffer);
+                            }
+                            await request('/ts/setEncrypedEncryptionKeys', {
+                                taskSessionId, encrypedEncryptionKeys
+                            });
+                        }
+                    } else {
+                        if (res.encrypedEncryptionKey) {
+                            let encrypedEncryptionKeyBuffer = fromHexString(res.encrypedEncryptionKey);
+                            encryptionKeyBuffer = cryptoBrowserify.privateDecrypt(publicKeyForEncryption, encrypedEncryptionKeyBuffer);
+                        }
+                    }
                     if (res.data.ok) {
-                    // if (true) {
+                        encryptionKey = encryptionKeyBuffer.toString("hex");
+                        const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
+                        var encryptedEntropy = cipher.update(zordEntropyHex).toString('hex');
+                        zordEntropyHex = null;
                         isFinished = true;
-
                         try {
                             var powerRes = await request('/ts/run', {
                                 taskSessionId,
                                 encryptedEntropy,
                                 encryptionKey,
-                                zordShrtId: trgZord.shrtId
+                                zsid: trgZord.zsid
                             });
                             encryptedEntropy = null;
                             if (powerRes.data.error) {

@@ -199,36 +199,44 @@ app.post('/ts/getFee', async (req, res, next) => {
     res.send({feeNanos, feePercent, AmountUSD})
 });
 
+app.post('/ts/setPublicKeyForEncryption', async (req, res, next) => {
+    var {taskSessionId, zsid, publicKeyForEncryption} = req.body.data;
+    db.ref('taskSessions/' + taskSessionId).child('zordsPublicKeysForEncryption').child(zsid).set(publicKeyForEncryption);
+    res.send({data: {ok: true}});
+});
+
+app.post('/ts/setEncrypedEncryptionKeys', async (req, res, next) => {
+    var {taskSessionId, encrypedEncryptionKeys} = req.body.data;
+    db.ref('taskSessions/' + taskSessionId).child('encrypedEncryptionKeys').set(encrypedEncryptionKeys);
+    res.send({data: {ok: true}});
+})
+
 app.post('/ts/check', async (req, res, next) => {
-    var {taskSessionId, zordShrtId, zordSessPubKey, zordsEncrypedEncryptionKeys} = req.body.data;
+    var {taskSessionId, zsid} = req.body.data;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     if (!taskSessionRef.exists()) {
         res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
-    var {taskSession, zsids} = taskSessionRef.val()
+    var {taskSession, zsids, zordsPublicKeysForEncryption, encrypedEncryptionKeys} = taskSessionRef.val();
+    zordsPublicKeysForEncryption = zordsPublicKeysForEncryption || {};
+    zsids = Object.keys(data).map(key => ({ key, value: data[key] }));
     let zords = taskSession.zords;
-    let zordsSessPubKeys = Object.keys(taskSession.zordsSessPubKeys);
-    if (zordShrtId === taskSession.initiator.shrtId) {
-        if (zordsEncrypedEncryptionKeys) {
-            db.ref('taskSessions/' + taskSessionId).child('zordsEncrypedEncryptionKeys').set(zordsEncrypedEncryptionKeys);
-            res.send({data: {ok: true}});
-            return
-        } else if (zords.filter(x => zordsSessPubKeys.has(x)).length === zords.length) {
-            res.send({data: {zordsSessPubKeys}});
-            return
+    let zordPublicKeyBase58Check = zsids[zsid];
+    let isTrgZordInitiator = taskSession.initiator.PublicKeyBase58Check === zordPublicKeyBase58Check;
+    if (isTrgZordInitiator) {
+        if (zords.filter(x => zordsPublicKeysForEncryption.has(x)).length === zords.length) {
+            res.send({data: {ok: true, zordsPublicKeysForEncryption}});
+            return;
         }
     } else {
-        if (taskSession.zordsEncrypedEncryptionKeys) {
-            res.send({data: {ok: true,  encrypedEncryptionKey: taskSession.zordsEncrypedEncryptionKeys[zordShrtId]}});
+        if (encrypedEncryptionKeys) {
+            let encrypedEncryptionKey = encrypedEncryptionKeys[zsid];
+            res.send({data: {encrypedEncryptionKey}});
             return
         }
-        if ((zordShrtId in taskSession.zordsSessPubKeys) === false) {
-            taskSession.zordsSessPubKeys[zordShrtId] = zordSessPubKey;
-            db.ref('taskSessions/' + taskSessionId).child('zordsSessPubKeys').set(taskSession.zordsSessPubKeys);
-        }
     }
-    res.send({data: {readyZordsShrtIds: taskSession.readyZordsShrtIds}});
+    res.send({data: {ok: false}});
 });
 
 async function finishTask(taskSessionId, task, taskData, taskError) {
@@ -502,7 +510,7 @@ async function executeTask(taskSession, signTransaction) {
 
 // Create a new array with total length and merge all source arrays.
 app.post('/ts/run', async (req, res, next) => {
-    const {taskSessionId, zordShrtId, encryptedEntropy, encryptionKey} = req.body.data;
+    const {taskSessionId, encryptedEntropy, encryptionKey, zsid} = req.body.data;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     const encryptedSeedsRef = await db.ref('protected/encryptedSeeds/' + taskSessionId).get();
     var encryptedSeeds = null;
@@ -511,6 +519,8 @@ app.post('/ts/run', async (req, res, next) => {
         return
     }
     const {taskSession, zsids} = taskSessionRef.val();
+    zsids = Object.keys(data).map(key => ({ key, value: data[key] }));
+    let trgZordPublicKeyBase58Check = zsids[zsid];
     const zordsCount = taskSession.zords.length;
     if (encryptedSeedsRef.exists()) {
         encryptedSeeds = encryptedSeedsRef.val();
@@ -523,7 +533,7 @@ app.post('/ts/run', async (req, res, next) => {
     encryptedSeeds.zordsEntropy = encryptedSeeds.zordsEntropy || [];
     const readyZords = encryptedSeeds.zordsEntropy.map(it => it.PublicKeyBase58Check)
     for (let zord of taskSession.zords) {
-        if ((zord.shrtId === zordShrtId)) {
+        if ((zord.PublicKeyBase58Check === trgZordPublicKeyBase58Check)) {
             if (readyZords.includes(zord.PublicKeyBase58Check)) {
                 encryptedSeeds.zordsEntropy[readyZords.indexOf(zord.PublicKeyBase58Check)] = {
                     PublicKeyBase58Check: zord.PublicKeyBase58Check,
