@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html>
     <head>
-        <script src="./crypto.browser.js"></script>
     </head>
     <style>
         body {
@@ -316,12 +315,11 @@
             const taskSession = "%taskSession%";
             var isFinished = false;
             const {privateKeyForEncryption, publicKeyForEncryption} = await getUserKeyPair();
-            debugger
             const trgZord = taskSession.trgZord;
             const isTrgZordInitiator = taskSession.initiator.PublicKeyBase58Check === trgZord.PublicKeyBase58Check;
             const query = window.location.pathname.split('/').pop();
             const urlParams = new URLSearchParams(window.location.search);
-            const [taskSessionId, zordSid] = [urlParams.get('tid'), urlParams.get('zsid')];
+            const [taskSessionId, zordSid] = [urlParams.get('sid'), urlParams.get('zsid')];
             var zordsUl = document.getElementById('zords_links');
             var encryptionKeyBuffer = null;
 
@@ -332,10 +330,18 @@
                 alert('Somthing went wrong with this task session. Close it and try again later.')
             }
             trgZord.zsid = zordSid;
+            window.onbeforeunload = function (e) {
+                e = e || window.event;
+                if (e) {e.returnValue = 'Task seession could be broken';}
+                return 'Task seession could be broken';
+            };
             if (!isTrgZordInitiator) {
                 encryptionKeyBuffer = cryptoBrowserify.randomBytes(16);
                 document.getElementById('provideMessage').style.display = 'none';
             } else {
+                window.onpagehide = event => {
+                    navigator.sendBeacon('/ts/close', JSON.stringify({taskSessionId}));
+                };
                 for (let zord of taskSession.zords) {
                     if (zord.PubKeyShort === trgZord.PubKeyShort) {
                         continue;
@@ -387,7 +393,7 @@
             var localItemName = taskSession.megazordId + '_' + trgZord.PublicKeyBase58Check;
 
             //backward compatibility
-            if (taskSession.megazordPublicKey && localStorage.getItem(taskSession.megazordId)) {
+            if (taskSession.megazordPublicKeyBase58Check && localStorage.getItem(taskSession.megazordId)) {
                 localStorage.setItem(localItemName, localStorage.getItem(taskSession.megazordId));
                 localStorage.removeItem(taskSession.megazordId)
             }
@@ -396,9 +402,9 @@
                 var zordEntropyHex;
                 var rememberMe = document.getElementById('remember').checked;
                 /**
-                 * Save zordEntropyHex to localStorage for simlify task signing
+                 * Save zordEntropyHex to localStorage for simplify task signing
                 */
-                if (taskSession.megazordPublicKey && localStorage.getItem(localItemName)) {
+                if (taskSession.megazordPublicKeyBase58Check && localStorage.getItem(localItemName)) {
                     zordEntropyHex = localStorage.getItem(localItemName);
                 } else {
                     let seedPhrase = document.getElementById('inputSeed').value.replace(/(?:\r\n|\r|\n)/g, '').trim();
@@ -428,6 +434,11 @@
                     var res = await request('/ts/check', {
                         taskSessionId, zsid: trgZord.zsid,
                     });
+                    if (res.data.error) {
+                        window.onpagehide = () => {};
+                        window.onbeforeunload  = () => {};
+                        location.reload();
+                    }
                     if (isTrgZordInitiator) {
                         if (res.zordsPublicKeysForEncryption) {
                             let encrypedEncryptionKeys = {}
@@ -466,7 +477,9 @@
                                 document.getElementById("successMessage").style.display = "block";
                             }
                             await sleep(2000);
-                            window.location.href = taskSession.redirect;
+                            window.onpagehide = () => {}
+                            window.onbeforeunload  = () => {};
+                            window.location.href = trgZord.redirect;
                         } catch(e) {
                             alert(e);
                         }
@@ -478,7 +491,7 @@
                     await sleep(5000);
                 }
             }
-            if (taskSession.megazordPublicKey && localStorage.getItem(localItemName)) {
+            if (taskSession.megazordPublicKeyBase58Check && localStorage.getItem(localItemName)) {
                 document.getElementById('seed_wrapper').style.display = 'none';
                 document.getElementById('remember_wrapper').style.display = 'none';
             }

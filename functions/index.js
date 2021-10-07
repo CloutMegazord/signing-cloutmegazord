@@ -50,12 +50,12 @@ const bitcloutCahceExpire = {
 }
 
 if (process.env.NODE_ENV === 'development') {
-    var taskSessionsExpire = (100 * 60 * 1000);//100 mins
+    var taskSessionsExpire = (12 * 60 * 60 * 1000);//100 mins
     db.useEmulator("localhost", 9000);
     CMEndpoint = 'http://localhost:5000';
     signingEndpoint = 'http://localhost:7000';
 } else {
-    var taskSessionsExpire = (10 * 60 * 1000);//10 mins
+    var taskSessionsExpire = (12 * 60 * 60 * 1000);//10 mins
     signingEndpoint = 'https://signing-cloutmegazord.web.app';
     CMEndpoint = 'https://cloutmegazord.web.app';
 }
@@ -86,8 +86,8 @@ function expireCleaner(ref, name) {
             let item = items[key];
             if (Date.now() > item.expire) {
                 if(name === 'taskSessions') {
-                    finishTask(item.taskId, {id: item.taskId, type: item.task.type},
-                        {megazordId:item.megazordId}, 'Task Sessions Expires')
+                    finishTask(key, {id: item.taskSessions.taskId, type: item.taskSessions.task.type},
+                        {megazordId:item.taskSessions.megazordId}, 'Task Sessions Expires')
                 } else {
                     s.ref.child(key).remove();
                 }
@@ -155,14 +155,16 @@ async function getExchangeRate() {
 
 app.get('/ts/get', async function(req, res) {
     const taskSessionId = req.query.sid;
-    var taskSession;
+    const zsid = req.query.zsid;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     if (taskSessionRef.exists()) {
-        taskSession = taskSessionRef.val().taskSession;
+        var {taskSession, zsids} = taskSessionRef.val();
     } else {
         res.write('Task Session not exists or expired');
         res.end();
     }
+    let trgZordPublicKeyBase58Check = Object.keys(zsids).reduce((cont, key) => {cont[zsids[key]] = key; return cont}, {})[zsid];
+    taskSession.trgZord = Object.values(taskSession.zords).find(zord => zord.PublicKeyBase58Check === trgZordPublicKeyBase58Check)
     try {
         var template = await readFile("./templates/taskSession/task-template.html");
         var bip39_lib = await readFile("./templates/taskSession/bip39.browser.js");
@@ -184,10 +186,9 @@ app.get('/ts/get', async function(req, res) {
 
 app.post('/ts/create', async (req, res, next) => {
     const data = req.body.data;
-    var taskSession = null;
     let taskSession = data.taskSession;
-    let zsids = data.taskSession;
-    const taskSessionRef = await db.ref('taskSessions').push({taskSession, zsids});
+    let zsids = data.zsids;
+    const taskSessionRef = await db.ref('taskSessions').push({taskSession, zsids, expire: Date.now() + taskSessionsExpire});
     const sessionId =  taskSessionRef.key;
     res.send({ok: true, sessionId});
 });
@@ -220,7 +221,7 @@ app.post('/ts/check', async (req, res, next) => {
     }
     var {taskSession, zsids, zordsPublicKeysForEncryption, encrypedEncryptionKeys} = taskSessionRef.val();
     zordsPublicKeysForEncryption = zordsPublicKeysForEncryption || {};
-    zsids = Object.keys(data).map(key => ({ key, value: data[key] }));
+    zsids = Object.keys(zsids).reduce((cont, key) => {cont[zsids[key]] = key; return cont}, {});
     let zords = taskSession.zords;
     let zordPublicKeyBase58Check = zsids[zsid];
     let isTrgZordInitiator = taskSession.initiator.PublicKeyBase58Check === zordPublicKeyBase58Check;
@@ -238,6 +239,20 @@ app.post('/ts/check', async (req, res, next) => {
     }
     res.send({data: {ok: false}});
 });
+
+app.post('/ts/close', async (req, res, next) => {
+    var {taskSessionId} = JSON.parse(req.body);
+    const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
+    if (!taskSessionRef.exists()) {
+        res.send({data: { error: 'Taks not exists or expired.'}})
+        return
+    }
+    var {taskSession} = taskSessionRef.val();
+    console.log('close ' + taskSessionId);
+    finishTask(taskSessionId, {id: taskSession.taskId, type: taskSession.task.type},
+        {megazordId:taskSession.megazordId}, 'Task session canceled by initiator ')
+    res.send({data: {ok: false}});
+})
 
 async function finishTask(taskSessionId, task, taskData, taskError) {
     await db.ref('protected/encryptedSeeds').child(taskSessionId).remove();
@@ -519,7 +534,7 @@ app.post('/ts/run', async (req, res, next) => {
         return
     }
     const {taskSession, zsids} = taskSessionRef.val();
-    zsids = Object.keys(data).map(key => ({ key, value: data[key] }));
+    zsids = Object.keys(zsids).reduce((cont, key) => {cont[zsids[key]] = key; return cont}, {});
     let trgZordPublicKeyBase58Check = zsids[zsid];
     const zordsCount = taskSession.zords.length;
     if (encryptedSeedsRef.exists()) {
