@@ -226,14 +226,14 @@ app.post('/ts/check', async (req, res, next) => {
     let zordPublicKeyBase58Check = zsids[zsid];
     let isTrgZordInitiator = taskSession.initiator.PublicKeyBase58Check === zordPublicKeyBase58Check;
     if (isTrgZordInitiator) {
-        if (zords.filter(x => zordsPublicKeysForEncryption.has(x)).length === zords.length) {
+        if (Object.keys(zsids).filter(x => x in zordsPublicKeysForEncryption).length === (zords.length - 1)) {
             res.send({data: {ok: true, zordsPublicKeysForEncryption}});
             return;
         }
     } else {
         if (encrypedEncryptionKeys) {
             let encrypedEncryptionKey = encrypedEncryptionKeys[zsid];
-            res.send({data: {encrypedEncryptionKey}});
+            res.send({data: {ok: true, encrypedEncryptionKey}});
             return
         }
     }
@@ -248,9 +248,8 @@ app.post('/ts/close', async (req, res, next) => {
         return
     }
     var {taskSession} = taskSessionRef.val();
-    console.log('close ' + taskSessionId);
-    finishTask(taskSessionId, {id: taskSession.taskId, type: taskSession.task.type},
-        {megazordId:taskSession.megazordId}, 'Task session canceled by initiator ')
+    // finishTask(taskSessionId, {id: taskSession.taskId, type: taskSession.task.type},
+    //     {megazordId:taskSession.megazordId}, 'Task session canceled by initiator ')
     res.send({data: {ok: false}});
 })
 
@@ -533,7 +532,7 @@ app.post('/ts/run', async (req, res, next) => {
         res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
-    const {taskSession, zsids} = taskSessionRef.val();
+    var {taskSession, zsids} = taskSessionRef.val();
     zsids = Object.keys(zsids).reduce((cont, key) => {cont[zsids[key]] = key; return cont}, {});
     let trgZordPublicKeyBase58Check = zsids[zsid];
     const zordsCount = taskSession.zords.length;

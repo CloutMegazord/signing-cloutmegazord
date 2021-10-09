@@ -336,9 +336,9 @@
                 return 'Task seession could be broken';
             };
             if (!isTrgZordInitiator) {
-                encryptionKeyBuffer = cryptoBrowserify.randomBytes(16);
                 document.getElementById('provideMessage').style.display = 'none';
             } else {
+                encryptionKeyBuffer = cryptoBrowserify.randomBytes(16);
                 window.onpagehide = event => {
                     navigator.sendBeacon('/ts/close', JSON.stringify({taskSessionId}));
                 };
@@ -424,7 +424,6 @@
                 document.getElementById('inputSeed').disabled = true;
                 document.getElementById('ready_info').style.display = 'block';
 
-                setPublicKeyForEncryption
                 if (!isTrgZordInitiator) {
                     await request('/ts/setPublicKeyForEncryption', {
                         taskSessionId, zsid: trgZord.zsid, publicKeyForEncryption
@@ -440,9 +439,9 @@
                         location.reload();
                     }
                     if (isTrgZordInitiator) {
-                        if (res.zordsPublicKeysForEncryption) {
+                        if (res.data.zordsPublicKeysForEncryption) {
                             let encrypedEncryptionKeys = {}
-                            for (let [zsid, publicKeyForEncryption] of Object.entries(res.zordsPublicKeysForEncryption)) {
+                            for (let [zsid, publicKeyForEncryption] of Object.entries(res.data.zordsPublicKeysForEncryption)) {
                                 let encrypedencryptionKeyBuffer = cryptoBrowserify.publicEncrypt(publicKeyForEncryption, encryptionKeyBuffer);
                                 encrypedEncryptionKeys[zsid] = toHexString(encrypedencryptionKeyBuffer);
                             }
@@ -451,13 +450,13 @@
                             });
                         }
                     } else {
-                        if (res.encrypedEncryptionKey) {
-                            let encrypedEncryptionKeyBuffer = fromHexString(res.encrypedEncryptionKey);
-                            encryptionKeyBuffer = cryptoBrowserify.privateDecrypt(publicKeyForEncryption, encrypedEncryptionKeyBuffer);
+                        if (res.data.encrypedEncryptionKey) {
+                            let encrypedEncryptionKeyBuffer = fromHexString(res.data.encrypedEncryptionKey);
+                            encryptionKeyBuffer = cryptoBrowserify.privateDecrypt(privateKeyForEncryption, encrypedEncryptionKeyBuffer);
                         }
                     }
                     if (res.data.ok) {
-                        encryptionKey = encryptionKeyBuffer.toString("hex");
+                        let encryptionKey = encryptionKeyBuffer.toString("hex");
                         const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
                         var encryptedEntropy = cipher.update(zordEntropyHex).toString('hex');
                         zordEntropyHex = null;
