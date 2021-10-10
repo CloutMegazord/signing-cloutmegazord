@@ -86,7 +86,7 @@ function expireCleaner(ref, name) {
             let item = items[key];
             if (Date.now() > item.expire) {
                 if(name === 'taskSessions') {
-                    finishTask(key, {id: item.taskSessions.taskId, type: item.taskSessions.task.type},
+                    finishTask(key, {id: item.taskSession.taskId, type: item.taskSession.task.type},
                         {megazordId:item.taskSessions.megazordId}, 'Task Sessions Expires')
                 } else {
                     s.ref.child(key).remove();
@@ -532,7 +532,7 @@ app.post('/ts/run', async (req, res, next) => {
         res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
-    var {taskSession, zsids} = taskSessionRef.val();
+    var {taskSession, expire, zsids} = taskSessionRef.val();
     zsids = Object.keys(zsids).reduce((cont, key) => {cont[zsids[key]] = key; return cont}, {});
     let trgZordPublicKeyBase58Check = zsids[zsid];
     const zordsCount = taskSession.zords.length;
@@ -540,7 +540,7 @@ app.post('/ts/run', async (req, res, next) => {
         encryptedSeeds = encryptedSeedsRef.val();
     } else {
         encryptedSeeds = {
-            expire: taskSession.expire,
+            expire: expire,
             zordsEntropy: []
         }
     }
