@@ -1,7 +1,7 @@
 class BackendRoutes {
     static ExchangeRateRoute = "/api/v0/get-exchange-rate";
   static BurnBitcoinRoute = "/api/v0/burn-bitcoin";
-  static SendBitCloutRoute = "/api/v0/send-bitclout";
+  static SendDeSoRoute = "/api/v0/send-deso";
   static MinerControlRoute = "/api/v0/miner-control";
 
   static GetUsersStatelessRoute = "/api/v0/get-users-stateless";
@@ -156,14 +156,14 @@ class BackendApiService {
     LegacySeedListKey = "seedList";
 
           // TODO: Use Broadcast bool isntead
-    SendBitCloutPreview(
+    SendDeSoPreview(
         endpoint,
         SenderPublicKeyBase58Check,
         RecipientPublicKeyOrUsername,
         AmountNanos,
         MinFeeRateNanosPerKB
     ){
-        return this.post(endpoint, BackendRoutes.SendBitCloutRoute, {
+        return this.post(endpoint, BackendRoutes.SendDeSoRoute, {
             SenderPublicKeyBase58Check,
             RecipientPublicKeyOrUsername,
             AmountNanos: Math.floor(AmountNanos),
@@ -226,10 +226,10 @@ class BackendApiService {
             TransactionHex,
         });
     }
-    Reclout(endpoint, {UpdaterPublicKeyBase58Check, RecloutedPostHashHex}) {
+    Repost(endpoint, {UpdaterPublicKeyBase58Check, RepostedPostHashHex}) {
         return this.post(endpoint, BackendRoutes.RoutePathSubmitPost, {
             UpdaterPublicKeyBase58Check,
-            RecloutedPostHashHex,
+            RepostedPostHashHex,
             PostHashHexToModify: '',
             ParentStakeID: '',
             Title: '',

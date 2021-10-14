@@ -17,14 +17,31 @@ const cryptoService = new CryptoService();
 const entropyService = new EntropyService();
 const signingService = new SigningService();
 
+const sleep = time => new Promise((r) => {setTimeout(() => r(), time)});
+
 const bitcloutApiService = new BackendApiService({
-    post: (endpoint, data) => {
-        return axios.post(endpoint, data, {
-            headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': BitCloutApiToken
+    post: async (endpoint, data) => {
+        let result = null;
+        let maxAttempts = 3;
+        let attempts = 0;
+        let errorMessage = null;
+        while (attempts < maxAttempts) {
+            try {
+                result = await axios.post(endpoint, data, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'User-Agent': BitCloutApiToken
+                    }
+                });
+                return result;
+            } catch (e) {
+                attempts += 1;
+                errorMessage = e.message;
+                console.log(`ApiService Error: ${errorMessage}. attempts: ${attempts}`)
+                await sleep(500);
             }
-        })
+        }
+        throw new Error(errorMessage);
     }
 });
 bitcloutApiService._handleError = (e) => {
@@ -343,41 +360,42 @@ const Tasks = {
         }
         return [Math.floor(AmountNanos * (trgFee / 100)), trgFee, AmountUSD];
     },
-    async _bitcloutFeeWrapper(megazordPublicKey, Recipient, AmountNanos) {
-        let feeResp = await bitcloutApiService.SendBitCloutPreview(
+    async _bitcloutFeeWrapper(megazordPublicKeyBase58Check, Recipient, AmountNanos) {
+        let feeResp = await bitcloutApiService.SendDeSoPreview(
             bitcloutEndpoint,
-            megazordPublicKey,
+            megazordPublicKeyBase58Check,
             Recipient,
             -1,
             MinFeeRateNanosPerKB
         );
         let FeeNanos = feeResp.data.FeeNanos;
-        let resp = await bitcloutApiService.SendBitCloutPreview(
+        let resp = await bitcloutApiService.SendDeSoPreview(
             bitcloutEndpoint,
-            megazordPublicKey,
+            megazordPublicKeyBase58Check,
             Recipient,
             AmountNanos - FeeNanos,
             MinFeeRateNanosPerKB
         );
         return resp
     },
-    async sendCLOUT(taskSession, exchRate, signTransaction) {
+    async sendDeSo(taskSession, exchRate, signTransaction) {
         let AmountNanos = taskSession.task.AmountNanos,
-            megazordPublicKey = taskSession.megazordPublicKey,
+            megazordPublicKeyBase58Check = taskSession.megazordPublicKeyBase58Check,
             Recipient = taskSession.task.Recipient,
             transactionResp,
             [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, taskSession.trgFee);
 
+
         if (megazordFeeNanos) {
-            transactionResp = await bitcloutApiService.SendBitCloutPreview(
+            transactionResp = await bitcloutApiService.SendDeSoPreview(
                 bitcloutEndpoint,
-                megazordPublicKey,
+                megazordPublicKeyBase58Check,
                 Recipient,
                 AmountNanos - megazordFeeNanos,
                 MinFeeRateNanosPerKB
             );
         } else {
-            transactionResp = await this._bitcloutFeeWrapper(megazordPublicKey, Recipient, AmountNanos);
+            transactionResp = await this._bitcloutFeeWrapper(megazordPublicKeyBase58Check, Recipient, AmountNanos);
         }
         let signedTransactionHex = signTransaction(transactionResp.data.TransactionHex);
         try {
@@ -391,9 +409,9 @@ const Tasks = {
                 megazordFeeNanos = transactionResp.data.ChangeAmountNanos;
             }
             try {
-                var FeeResp = await bitcloutApiService.SendBitCloutPreview(
+                var FeeResp = await bitcloutApiService.SendDeSoPreview(
                     bitcloutEndpoint,
-                    megazordPublicKey,
+                    megazordPublicKeyBase58Check,
                     CMPubKey,
                     megazordFeeNanos - transactionResp.data.FeeNanos,
                     MinFeeRateNanosPerKB
@@ -412,7 +430,7 @@ const Tasks = {
     },
     async sendCC(taskSession, exchRate, signTransaction) {
         let AmountNanos = taskSession.task.AmountNanos,
-            megazordPublicKey = taskSession.megazordPublicKey,
+            megazordPublicKeyBase58Check = taskSession.megazordPublicKeyBase58Check,
             Recipient = taskSession.task.Recipient,
             CreatorPublicKeyBase58Check = taskSession.task.CreatorPublicKeyBase58Check,
             transactionResp,
@@ -420,7 +438,7 @@ const Tasks = {
 
         transactionResp = await bitcloutApiService.TransferCreatorCoinPreview(
             bitcloutEndpoint,
-            megazordPublicKey,
+            megazordPublicKeyBase58Check,
             CreatorPublicKeyBase58Check,
             Recipient,
             AmountNanos - megazordFeeNanos,
@@ -436,7 +454,7 @@ const Tasks = {
             try {
                 var FeeResp = await bitcloutApiService.TransferCreatorCoinPreview(
                     bitcloutEndpoint,
-                    megazordPublicKey,
+                    megazordPublicKeyBase58Check,
                     CreatorPublicKeyBase58Check,
                     CMPubKey,
                     megazordFeeNanos,
@@ -464,7 +482,7 @@ const Tasks = {
         const updateResp =  await bitcloutApiService.UpdateProfilePreview(
             bitcloutEndpoint,
             // Specific fields
-            taskSession.megazordPublicKey,
+            taskSession.megazordPublicKeyBase58Check,
             // Optional: Only needed when updater public key != profile public key
             '',
             taskSession.task.NewUsername || "",
@@ -483,12 +501,12 @@ const Tasks = {
             throw new Error("BitClout cannot process such transaction.")
         }
     },
-    async reClout(taskSession, signTransaction) {
-        const createRecloutResponse = await bitcloutApiService.Reclout(bitcloutEndpoint, {
-            UpdaterPublicKeyBase58Check: taskSession.megazordPublicKey,
-            RecloutedPostHashHex: taskSession.task.postHash
+    async repost(taskSession, signTransaction) {
+        const createRepostResponse = await bitcloutApiService.Repost(bitcloutEndpoint, {
+            UpdaterPublicKeyBase58Check: taskSession.megazordPublicKeyBase58Check,
+            RepostedPostHashHex: taskSession.task.postHash
         });
-        let signedTransactionHex = signTransaction(createRecloutResponse.data.TransactionHex);
+        let signedTransactionHex = signTransaction(createRepostResponse.data.TransactionHex);
         try {
             await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
         } catch (e) {
@@ -504,16 +522,16 @@ async function executeTask(taskSession, signTransaction) {
             return
         } else if (type == 'send') {
             var exchRate = await getExchangeRate();
-            if (taskSession.task.Currency === '$ClOUT') {
-                await Tasks.sendCLOUT(taskSession, exchRate, signTransaction);
+            if (taskSession.task.Currency === '$DESO') {
+                await Tasks.sendDeSo(taskSession, exchRate, signTransaction);
             } else {
                 await Tasks.sendCC(taskSession, exchRate, signTransaction);
             }
         } else if (type == 'updateProfile') {
             await Tasks.updateProfile(taskSession, signTransaction);
         }
-        else if (type == 'reClout') {
-            await Tasks.reClout(taskSession, signTransaction);
+        else if (type == 'repost') {
+            await Tasks.repost(taskSession, signTransaction);
         } else {
             throw new Error('Task type: ' + type + ' not supported');
         }
@@ -579,18 +597,18 @@ app.post('/ts/run', async (req, res, next) => {
     var taskError = '';
     var taskData = {megazordId:taskSession.megazordId};
     try {
-        var [megazordPrivateKey, megazordPublicKey] = zordsToMegazord(zordsEntropySignature, encryptionKey);
+        var [megazordPrivateKey, megazordPublicKeyBase58Check] = zordsToMegazord(zordsEntropySignature, encryptionKey);
     } catch(e) {
         taskError = 'Zord Seeds is Incorrect';
         finishTask(taskSessionId, task, taskData, taskError);
         return
     }
-    if (taskSession.megazordPublicKey && megazordPublicKey !== taskSession.megazordPublicKey) {
+    if (taskSession.megazordPublicKeyBase58Check && megazordPublicKeyBase58Check !== taskSession.megazordPublicKeyBase58Check) {
         taskError = 'Zord Seeds is Incorrect';
         finishTask(taskSessionId, task, taskData, taskError);
         return
     }
-    taskData.megazordPublicKey = megazordPublicKey;
+    taskData.megazordPublicKeyBase58Check = megazordPublicKeyBase58Check;
     const signTransaction = tx => {
         try {
             return signingService.signTransaction(megazordPrivateKey, tx);
