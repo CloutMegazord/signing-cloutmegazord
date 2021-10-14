@@ -224,7 +224,7 @@
             <!-- <h4>Your Pub Key: <span id="yourPubKey"></span></h4> -->
             <div class="links_section">
                 <p id='provideMessage' class="center_text">
-                    Provide personal links (below) to other Megazord co-owners before Signing Task.
+                    Provide personal signing links (below) to other Zords (co-owners).
                 </p>
                 <!-- <p class="center_text">Other Zords:</p> -->
                 <ul id='zords_links'></ul>
@@ -255,182 +255,249 @@
     <script>"%crypto.browser.js%"</script>
     <script type="text/javascript">
         'use strict'
-        function sleep(time) {
-            return new Promise(function(resolve, reject) {setTimeout(()=> resolve(), time)})
-        }
-
-        function request(action, data) {
-            return fetch(action, {
-                method: 'post',
-                headers: {
-                    'Accept': 'application/json, text/plain, */*',
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({data})
-            }).then(res => res.json())
-        }
-
-        const taskSession = "%taskSession%";
-        var query
-        var isFinished = false;
-        var trgZord = null
-
-        query = window.location.pathname.split('/').pop();
-        const urlParams = new URLSearchParams(window.location.search);
-        const [taskSessionId, shrtId, encryptionKey] = [urlParams.get('tid'), urlParams.get('zid'), urlParams.get('k')];
-        // const [taskShrtId, shrtId, encryptionKey]  = query.split('&');
-        document.getElementById('taskType').innerText = taskSession.task.type;
-        document.getElementById('taskId').innerText = 'id: ' + taskSession.taskId;
-        document.getElementById('description').innerText = taskSession.task.description;
-
-        // document.getElementById('yourPubKey').innerText = pubKey.slice(0, 14) + '...';
-        var zordsUl = document.getElementById('zords_links');
-        for (let zord of taskSession.zords) {
-            if (zord.shrtId === shrtId) {
-                trgZord = zord;
-                continue;
+        async function main() {
+            function sleep(time) {
+                return new Promise(function(resolve, reject) {setTimeout(()=> resolve(), time)})
             }
-        }
-        if(!trgZord) {
-            alert('Somthing went wrong with this task session. Close it and try again later.')
-        }
-        if (taskSession.initiator.publicKey !== trgZord.PublicKeyBase58Check) {
-            document.getElementById('provideMessage').style.display = 'none';
-        } else {
-            for (let zord of taskSession.zords) {
-                if (zord.PubKeyShort === trgZord.PubKeyShort) {
-                    continue;
-                }
-                let zordName = zord.Username ? '@' + zord.Username : zord.PubKeyShort;
-                var linkHref = zord.link + '&k='+encryptionKey;
-                let item = document.createElement('li')
-                // var img = document.createElement('img');
-                var details = document.createElement('details');
-                var linkInput = document.createElement('input');
-                var linkLabel = document.createElement('label');
-                var summary = document.createElement('summary');
-                var copyBtn = document.createElement('div');
-                var info = document.createElement('div');
-                info.classList = 'sendLinkInfo';
-                function wrapper(link, linkInput) {
-                    copyBtn.onclick = function() {
-                        navigator.clipboard.writeText(link);
-                        linkInput.select()
-                    }
-                }
-                wrapper(linkHref, linkInput);
-                copyBtn.classList = 'copy-btn';
-                linkInput.classList = 'link-input';
-                linkInput.id = zordName + '_link'
-                linkLabel.classList = 'link-label';
-                function labelWrapper(linkInput, linkLabel) {
-                    linkLabel.onclick = function() {
-                        linkInput.select()
-                    }
-                }
-                labelWrapper(linkInput, linkLabel);
-                linkLabel.for=zordName + '_link'
-                linkLabel.innerText =  zordName + ' personal link:'
-                copyBtn.innerText = 'Click here for copy link';
-                linkInput.type="url";
-                linkInput.value = linkHref;
-                info.innerText = 'Send copied link to ' + zordName + ' by any messenger.'
-                // img.src=zord.ProfilePic;
-                // img.classList = 'avatar';
-                // item.innerText =  `
-                //     ${zord.Username}
-                //     ${zord.PubKeyShort}\n
-                // `
-                // 'Name: ' +zord.Username + ';\n Persanal Link: '+ window.location.origin + zord.link;
-                // item.prepend(img)
-                item.append(linkLabel)
-                item.append(linkInput)
-                item.append(copyBtn)
-                item.append(info)
-                // item.append(details)
-                zordsUl.appendChild(item)
+
+            function request(action, data) {
+                return fetch(action, {
+                    method: 'post',
+                    headers: {
+                        'Accept': 'application/json, text/plain, */*',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({data})
+                }).then(res => res.json())
             }
-        }
-        let trgZordName = trgZord.Username ? '@' + trgZord.Username : trgZord.PubKeyShort;
-        document.getElementById('current_username').innerText = trgZordName;
-        var localItemName = taskSession.megazordId + '_' + trgZord.PublicKeyBase58Check;
 
-        //backward compatibility
-        if (taskSession.megazordPublicKey && localStorage.getItem(taskSession.megazordId)) {
-            localStorage.setItem(localItemName, localStorage.getItem(taskSession.megazordId));
-            localStorage.removeItem(taskSession.megazordId)
-        }
+            async function generateKeyPair() {
+                let userKeyPair = await window.crypto.subtle.generateKey(
+                    {
+                    name: "RSA-PSS",
+                    // Consider using a 4096-bit key for systems that require long-term security
+                    modulusLength: 2048,
+                    publicExponent: new Uint8Array([1, 0, 1]),
+                    hash: "SHA-256",
+                    },
+                    true,
+                    ["sign", "verify"]
+                )
+                const exportedPrivateKey = await window.crypto.subtle.exportKey("pkcs8", userKeyPair.privateKey);
+                const exportedPrivateKeyAsString = String.fromCharCode.apply(null, new Uint8Array(exportedPrivateKey));
+                const exportedPrivateKeyAsBase64 = window.btoa(exportedPrivateKeyAsString);
+                const privateKeyForEncryption = `-----BEGIN PRIVATE KEY-----\n${exportedPrivateKeyAsBase64}\n-----END PRIVATE KEY-----`;
 
-        async function runCheck() {
-            var zordEntropyHex;
-            var rememberMe = document.getElementById('remember').checked;
-            /**
-             * Save zordEntropyHex to localStorage for simlify task signing
-            */
-            if (taskSession.megazordPublicKey && localStorage.getItem(localItemName)) {
-                zordEntropyHex = localStorage.getItem(localItemName);
+                const exportedPublicKey = await window.crypto.subtle.exportKey("spki", userKeyPair.publicKey);
+                const exportedPublicKeyAsString = String.fromCharCode.apply(null, new Uint8Array(exportedPublicKey));
+                const exportedPublicKeyAsBase64 = window.btoa(exportedPublicKeyAsString);
+                const publicKeyForEncryption = `-----BEGIN PUBLIC KEY-----\n${exportedPublicKeyAsBase64}\n-----END PUBLIC KEY-----`;
+
+                return {privateKeyForEncryption, publicKeyForEncryption}
+            }
+
+            const fromHexString = hexString =>
+                new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16)));
+
+            const toHexString = bytes =>
+                bytes.reduce((str, byte) => str + byte.toString(16).padStart(2, '0'), '');
+
+            async function getUserKeyPair() {
+                let userKeyPair = localStorage.getItem('userKeyPair');
+                if (userKeyPair) {
+                    return JSON.parse(userKeyPair)
+                }
+                userKeyPair = await generateKeyPair()
+                localStorage.setItem('userKeyPair', JSON.stringify(userKeyPair));
+                return userKeyPair
+            }
+
+            const taskSession = "%taskSession%";
+            var isFinished = false;
+            const {privateKeyForEncryption, publicKeyForEncryption} = await getUserKeyPair();
+            const trgZord = taskSession.trgZord;
+            const isTrgZordInitiator = taskSession.initiator.PublicKeyBase58Check === trgZord.PublicKeyBase58Check;
+            const query = window.location.pathname.split('/').pop();
+            const urlParams = new URLSearchParams(window.location.search);
+            const [taskSessionId, zordSid] = [urlParams.get('sid'), urlParams.get('zsid')];
+            var zordsUl = document.getElementById('zords_links');
+            var encryptionKeyBuffer = null;
+
+            document.getElementById('taskType').innerText = taskSession.task.type;
+            document.getElementById('taskId').innerText = 'id: ' + taskSession.taskId;
+            document.getElementById('description').innerText = taskSession.task.description;
+            if(!trgZord) {
+                alert('Somthing went wrong with this task session. Close it and try again later.')
+            }
+            trgZord.zsid = zordSid;
+            window.onbeforeunload = function (e) {
+                e = e || window.event;
+                if (e) {e.returnValue = 'Task seession could be broken';}
+                return 'Task seession could be broken';
+            };
+            if (!isTrgZordInitiator) {
+                document.getElementById('provideMessage').style.display = 'none';
             } else {
-                let seedPhrase = document.getElementById('inputSeed').value.replace(/(?:\r\n|\r|\n)/g, '').trim();
-                try {
-                    zordEntropyHex = bip39.mnemonicToEntropy(seedPhrase);
-                } catch (e) {
-                    alert('Error: ' + e.message);
-                    return;
-                }
-                if (rememberMe) {
-                    localStorage.setItem(localItemName, zordEntropyHex);
-                }
-            }
-            const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
-            var encryptedEntropy = cipher.update(zordEntropyHex).toString('hex');
-            zordEntropyHex = null;
-
-            document.getElementById('ready_button').style.display = 'none';
-            document.getElementById('remember_wrapper').style.display = 'none';
-            document.getElementById('inputSeed').disabled = true;
-            document.getElementById('ready_info').style.display = 'block';
-
-            while (!isFinished) {
-                var res = await request('/ts/check', {
-                    taskSessionId, zordShrtId: trgZord.shrtId
-                });
-                if (res.data.ok) {
-                // if (true) {
-                    isFinished = true;
-
-                    try {
-                        var powerRes = await request('/ts/run', {
-                            taskSessionId,
-                            encryptedEntropy,
-                            encryptionKey,
-                            zordShrtId: trgZord.shrtId
-                        });
-                        encryptedEntropy = null;
-                        if (powerRes.data.error) {
-                            document.getElementById("errorMessage").innerText = powerRes.data.error;
-                            document.getElementById("errorMessage").style.display = "block";
-                        } else {
-                            document.getElementById("successMessage").style.display = "block";
-                        }
-                        await sleep(2000);
-                        window.location.href = taskSession.redirect;
-                    } catch(e) {
-                        alert(e);
+                encryptionKeyBuffer = cryptoBrowserify.randomBytes(16);
+                window.onpagehide = event => {
+                    navigator.sendBeacon('/ts/close', JSON.stringify({taskSessionId}));
+                };
+                for (let zord of taskSession.zords) {
+                    if (zord.PubKeyShort === trgZord.PubKeyShort) {
+                        continue;
                     }
-
-                    document.getElementById('inputSeed').value = '';
-                } else {
-                    console.log(res.data);
+                    let zordName = zord.Username ? '@' + zord.Username : zord.PubKeyShort;
+                    var linkHref = zord.link;
+                    let item = document.createElement('li')
+                    // var img = document.createElement('img');
+                    var details = document.createElement('details');
+                    var linkInput = document.createElement('input');
+                    var linkLabel = document.createElement('label');
+                    var summary = document.createElement('summary');
+                    var copyBtn = document.createElement('div');
+                    var info = document.createElement('div');
+                    info.classList = 'sendLinkInfo';
+                    function wrapper(link, linkInput) {
+                        copyBtn.onclick = function() {
+                            navigator.clipboard.writeText(link);
+                            linkInput.select()
+                        }
+                    }
+                    wrapper(linkHref, linkInput);
+                    copyBtn.classList = 'copy-btn';
+                    linkInput.classList = 'link-input';
+                    linkInput.id = zordName + '_link'
+                    linkLabel.classList = 'link-label';
+                    function labelWrapper(linkInput, linkLabel) {
+                        linkLabel.onclick = function() {
+                            linkInput.select()
+                        }
+                    }
+                    labelWrapper(linkInput, linkLabel);
+                    linkLabel.for=zordName + '_link'
+                    linkLabel.innerText =  zordName + ' personal link:'
+                    copyBtn.innerText = 'Click here for copy link';
+                    linkInput.type="url";
+                    linkInput.value = linkHref;
+                    info.innerText = 'Send copied link to ' + zordName + ' by any messenger.';
+                    item.append(linkLabel)
+                    item.append(linkInput)
+                    item.append(copyBtn)
+                    item.append(info)
+                    // item.append(details)
+                    zordsUl.appendChild(item)
                 }
-                await sleep(5000);
+            }
+            let trgZordName = trgZord.Username ? '@' + trgZord.Username : trgZord.PubKeyShort;
+            document.getElementById('current_username').innerText = trgZordName;
+            var localItemName = taskSession.megazordId + '_' + trgZord.PublicKeyBase58Check;
+
+            //backward compatibility
+            if (taskSession.megazordPublicKeyBase58Check && localStorage.getItem(taskSession.megazordId)) {
+                localStorage.setItem(localItemName, localStorage.getItem(taskSession.megazordId));
+                localStorage.removeItem(taskSession.megazordId)
+            }
+
+            async function runCheck() {
+                var zordEntropyHex;
+                var rememberMe = document.getElementById('remember').checked;
+                /**
+                 * Save zordEntropyHex to localStorage for simplify task signing
+                */
+                if (taskSession.megazordPublicKeyBase58Check && localStorage.getItem(localItemName)) {
+                    zordEntropyHex = localStorage.getItem(localItemName);
+                } else {
+                    let seedPhrase = document.getElementById('inputSeed').value.replace(/(?:\r\n|\r|\n)/g, '').trim();
+                    try {
+                        zordEntropyHex = bip39.mnemonicToEntropy(seedPhrase);
+                    } catch (e) {
+                        alert('Error: ' + e.message);
+                        return;
+                    }
+                    if (rememberMe) {
+                        localStorage.setItem(localItemName, zordEntropyHex);
+                    }
+                }
+
+                document.getElementById('ready_button').style.display = 'none';
+                document.getElementById('remember_wrapper').style.display = 'none';
+                document.getElementById('inputSeed').disabled = true;
+                document.getElementById('ready_info').style.display = 'block';
+
+                if (!isTrgZordInitiator) {
+                    await request('/ts/setPublicKeyForEncryption', {
+                        taskSessionId, zsid: trgZord.zsid, publicKeyForEncryption
+                    });
+                }
+                while (!isFinished) {
+                    var res = await request('/ts/check', {
+                        taskSessionId, zsid: trgZord.zsid,
+                    });
+                    if (res.data.error) {
+                        window.onpagehide = () => {};
+                        window.onbeforeunload  = () => {};
+                        location.reload();
+                    }
+                    if (isTrgZordInitiator) {
+                        if (res.data.zordsPublicKeysForEncryption) {
+                            let encrypedEncryptionKeys = {}
+                            for (let [zsid, publicKeyForEncryption] of Object.entries(res.data.zordsPublicKeysForEncryption)) {
+                                let encrypedencryptionKeyBuffer = cryptoBrowserify.publicEncrypt(publicKeyForEncryption, encryptionKeyBuffer);
+                                encrypedEncryptionKeys[zsid] = toHexString(encrypedencryptionKeyBuffer);
+                            }
+                            await request('/ts/setEncrypedEncryptionKeys', {
+                                taskSessionId, encrypedEncryptionKeys
+                            });
+                        }
+                    } else {
+                        if (res.data.encrypedEncryptionKey) {
+                            let encrypedEncryptionKeyBuffer = fromHexString(res.data.encrypedEncryptionKey);
+                            encryptionKeyBuffer = cryptoBrowserify.privateDecrypt(privateKeyForEncryption, encrypedEncryptionKeyBuffer);
+                        }
+                    }
+                    if (res.data.ok) {
+                        let encryptionKey = encryptionKeyBuffer.toString("hex");
+                        const cipher = cryptoBrowserify.createCipher('aes-256-gcm', encryptionKey);
+                        var encryptedEntropy = cipher.update(zordEntropyHex).toString('hex');
+                        zordEntropyHex = null;
+                        isFinished = true;
+                        try {
+                            var powerRes = await request('/ts/run', {
+                                taskSessionId,
+                                encryptedEntropy,
+                                encryptionKey,
+                                zsid: trgZord.zsid
+                            });
+                            encryptedEntropy = null;
+                            if (powerRes.data.error) {
+                                document.getElementById("errorMessage").innerText = powerRes.data.error;
+                                document.getElementById("errorMessage").style.display = "block";
+                            } else {
+                                document.getElementById("successMessage").style.display = "block";
+                            }
+                            await sleep(2000);
+                            window.onpagehide = () => {}
+                            window.onbeforeunload  = () => {};
+                            window.location.href = trgZord.redirect;
+                        } catch(e) {
+                            alert(e);
+                        }
+
+                        document.getElementById('inputSeed').value = '';
+                    } else {
+                        console.log(res.data);
+                    }
+                    await sleep(5000);
+                }
+            }
+            if (taskSession.megazordPublicKeyBase58Check && localStorage.getItem(localItemName)) {
+                document.getElementById('seed_wrapper').style.display = 'none';
+                document.getElementById('remember_wrapper').style.display = 'none';
+            }
+            document.getElementById('ready_button').onclick = () => {
+                runCheck();
             }
         }
-        if (taskSession.megazordPublicKey && localStorage.getItem(localItemName)) {
-            document.getElementById('seed_wrapper').style.display = 'none';
-            document.getElementById('remember_wrapper').style.display = 'none';
-        }
-        document.getElementById('ready_button').onclick = () => {
-            runCheck();
-        }
+        main().then();
     </script>
 </html>

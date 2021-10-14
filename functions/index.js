@@ -18,14 +18,31 @@ const entropyService = new EntropyService();
 const signingService = new SigningService();
 
 axios.defaults.timeout = 5 * 60 * 1000;
+const sleep = time => new Promise((r) => {setTimeout(() => r(), time)});
+
 const bitcloutApiService = new BackendApiService({
-    post: (endpoint, data) => {
-        return axios.post(endpoint, data, {
-            headers: {
-                'Content-Type': 'application/json',
-                'User-Agent': BitCloutApiToken
+    post: async (endpoint, data) => {
+        let result = null;
+        let maxAttempts = 3;
+        let attempts = 0;
+        let errorMessage = null;
+        while (attempts < maxAttempts) {
+            try {
+                result = await axios.post(endpoint, data, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'User-Agent': BitCloutApiToken
+                    }
+                });
+                return result;
+            } catch (e) {
+                attempts += 1;
+                errorMessage = e.message;
+                console.log(`ApiService Error: ${errorMessage}. attempts: ${attempts}`)
+                await sleep(500);
             }
-        })
+        }
+        throw new Error(errorMessage);
     }
 });
 bitcloutApiService._handleError = (e) => {
@@ -51,12 +68,12 @@ const bitcloutCahceExpire = {
 }
 
 if (process.env.NODE_ENV === 'development') {
-    var taskSessionsExpire = (100 * 60 * 1000);//100 mins
+    var taskSessionsExpire = (12 * 60 * 60 * 1000);//100 mins
     db.useEmulator("localhost", 9000);
     CMEndpoint = 'http://localhost:5000';
     signingEndpoint = 'http://localhost:7000';
 } else {
-    var taskSessionsExpire = (10 * 60 * 1000);//10 mins
+    var taskSessionsExpire = (12 * 60 * 60 * 1000);//10 mins
     signingEndpoint = 'https://signing-cloutmegazord.web.app';
     CMEndpoint = 'https://cloutmegazord.web.app';
 }
@@ -87,8 +104,8 @@ function expireCleaner(ref, name) {
             let item = items[key];
             if (Date.now() > item.expire) {
                 if(name === 'taskSessions') {
-                    finishTask(item.taskId, {id: item.taskId, type: item.task.type},
-                        {megazordId:item.megazordId}, 'Task Sessions Expires')
+                    finishTask(key, {id: item.taskSession.taskId, type: item.taskSession.task.type},
+                        {megazordId:item.taskSessions.megazordId}, 'Task Sessions Expires')
                 } else {
                     s.ref.child(key).remove();
                 }
@@ -155,25 +172,17 @@ async function getExchangeRate() {
 }
 
 app.get('/ts/get', async function(req, res) {
-    const taskSessionId = req.query.tid;
-    const zordShrtId = req.query.zid;
-    const encryptionKey = req.query.k;
-    var taskSession = null;
+    const taskSessionId = req.query.sid;
+    const zsid = req.query.zsid;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     if (taskSessionRef.exists()) {
-        taskSession = taskSessionRef.val();
+        var {taskSession, zsids} = taskSessionRef.val();
     } else {
         res.write('Task Session not exists or expired');
         res.end();
     }
-    if(!encryptionKey) {
-        if (zordShrtId === taskSession.initiator.shrtId) {
-            res.redirect(req.originalUrl + '&k=' + crypto.randomBytes(16).toString('hex'));
-        } else {
-            res.write(`Task Session already running. Ask @${taskSession.initiator.Username} for personal link.`);
-        }
-        return;
-    }
+    let trgZordPublicKeyBase58Check = Object.keys(zsids).reduce((cont, key) => {cont[zsids[key]] = key; return cont}, {})[zsid];
+    taskSession.trgZord = Object.values(taskSession.zords).find(zord => zord.PublicKeyBase58Check === trgZordPublicKeyBase58Check)
     try {
         var template = await readFile("./templates/taskSession/task-template.html");
         var bip39_lib = await readFile("./templates/taskSession/bip39.browser.js");
@@ -193,51 +202,13 @@ app.get('/ts/get', async function(req, res) {
     res.end();
 })
 
-// var taskSession = {
-//     taskId: taskId,
-//     initiator: {publicKey},
-//     megazordId: data.megazordId,
-//     task: dbTask,
-//     readyZordsShrtIds: [],
-//     endPoint: functionsUrl,
-//     redirect: '/admin/tasks_list/' + data.megazordId
-// }
-// zord ={
-//     PubKeyShort: zordId.slice(0, 14) + '...',
-//     PublicKeyBase58Check: zordId,
-//     shrtId: shrtId,
-//     Username: profileRes.Profile.Username,
-//     ProfilePic: profileRes.Profile.ProfilePic,
-//     link: `/gts/${taskShrtId}&${shrtId}&${encryptionKey}`
-// }
-
 app.post('/ts/create', async (req, res, next) => {
     const data = req.body.data;
-    var taskSession = null;
-    const taskId = data.taskId;
-    const taskSessionRef = await db.ref('taskSessions/' + taskId).get();
-    if (taskSessionRef.exists()) {
-        taskSession = taskSessionRef.val()
-        if (taskSession.initiator.publicKey !== data.taskSession.initiator.publicKey) {
-            res.send({data: { error: `Task Session already running. Ask ${taskSession.initiator.Username} for personal link.`}})
-            return
-        }
-    }
-    taskSession = data.taskSession;
-    taskSession.expire = Date.now() + taskSessionsExpire;
-    await db.ref('taskSessions').child(taskId).set(taskSession);
-    res.send({ok: true, expire: taskSession.expire});
-});
-
-app.post('/ts/getTaskSession', async (req, res, next) => {
-    const taskId = req.data.taskId;
-    const taskSessionRef = await db.ref('taskSessions/' + taskId).get();
-    if (taskSessionRef.exists()) {
-        taskSession = taskSessionRef.val()
-        res.send({data: taskSession})
-        return
-    }
-    res.send({data: null})
+    let taskSession = data.taskSession;
+    let zsids = data.zsids;
+    const taskSessionRef = await db.ref('taskSessions').push({taskSession, zsids, expire: Date.now() + taskSessionsExpire});
+    const sessionId =  taskSessionRef.key;
+    res.send({ok: true, sessionId});
 });
 
 app.post('/ts/getFee', async (req, res, next) => {
@@ -247,25 +218,58 @@ app.post('/ts/getFee', async (req, res, next) => {
     res.send({feeNanos, feePercent, AmountUSD})
 });
 
+app.post('/ts/setPublicKeyForEncryption', async (req, res, next) => {
+    var {taskSessionId, zsid, publicKeyForEncryption} = req.body.data;
+    db.ref('taskSessions/' + taskSessionId).child('zordsPublicKeysForEncryption').child(zsid).set(publicKeyForEncryption);
+    res.send({data: {ok: true}});
+});
+
+app.post('/ts/setEncrypedEncryptionKeys', async (req, res, next) => {
+    var {taskSessionId, encrypedEncryptionKeys} = req.body.data;
+    db.ref('taskSessions/' + taskSessionId).child('encrypedEncryptionKeys').set(encrypedEncryptionKeys);
+    res.send({data: {ok: true}});
+})
+
 app.post('/ts/check', async (req, res, next) => {
-    var {taskSessionId, zordShrtId} = req.body.data;
+    var {taskSessionId, zsid} = req.body.data;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     if (!taskSessionRef.exists()) {
         res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
-    var taskSession = taskSessionRef.val()
-    taskSession.readyZordsShrtIds = taskSession.readyZordsShrtIds || [];
-    if (taskSession.readyZordsShrtIds.length == taskSession.zords.length) {
-        res.send({data: { ok: true }})
+    var {taskSession, zsids, zordsPublicKeysForEncryption, encrypedEncryptionKeys} = taskSessionRef.val();
+    zordsPublicKeysForEncryption = zordsPublicKeysForEncryption || {};
+    zsids = Object.keys(zsids).reduce((cont, key) => {cont[zsids[key]] = key; return cont}, {});
+    let zords = taskSession.zords;
+    let zordPublicKeyBase58Check = zsids[zsid];
+    let isTrgZordInitiator = taskSession.initiator.PublicKeyBase58Check === zordPublicKeyBase58Check;
+    if (isTrgZordInitiator) {
+        if (Object.keys(zsids).filter(x => x in zordsPublicKeysForEncryption).length === (zords.length - 1)) {
+            res.send({data: {ok: true, zordsPublicKeysForEncryption}});
+            return;
+        }
+    } else {
+        if (encrypedEncryptionKeys) {
+            let encrypedEncryptionKey = encrypedEncryptionKeys[zsid];
+            res.send({data: {ok: true, encrypedEncryptionKey}});
+            return
+        }
+    }
+    res.send({data: {ok: false}});
+});
+
+app.post('/ts/close', async (req, res, next) => {
+    var {taskSessionId} = JSON.parse(req.body);
+    const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
+    if (!taskSessionRef.exists()) {
+        res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
-    if (!taskSession.readyZordsShrtIds.includes(zordShrtId)) {
-        taskSession.readyZordsShrtIds.push(zordShrtId)
-        db.ref('taskSessions/' + taskSessionId).child('readyZordsShrtIds').set(taskSession.readyZordsShrtIds);
-    }
-    res.send({data: {readyZordsShrtIds: taskSession.readyZordsShrtIds}});
-});
+    var {taskSession} = taskSessionRef.val();
+    // finishTask(taskSessionId, {id: taskSession.taskId, type: taskSession.task.type},
+    //     {megazordId:taskSession.megazordId}, 'Task session canceled by initiator ')
+    res.send({data: {ok: false}});
+})
 
 async function finishTask(taskSessionId, task, taskData, taskError) {
     await db.ref('protected/encryptedSeeds').child(taskSessionId).remove();
@@ -357,41 +361,42 @@ const Tasks = {
         }
         return [Math.floor(AmountNanos * (trgFee / 100)), trgFee, AmountUSD];
     },
-    async _bitcloutFeeWrapper(megazordPublicKey, Recipient, AmountNanos) {
-        let feeResp = await bitcloutApiService.SendBitCloutPreview(
+    async _bitcloutFeeWrapper(megazordPublicKeyBase58Check, Recipient, AmountNanos) {
+        let feeResp = await bitcloutApiService.SendDeSoPreview(
             bitcloutEndpoint,
-            megazordPublicKey,
+            megazordPublicKeyBase58Check,
             Recipient,
             -1,
             MinFeeRateNanosPerKB
         );
         let FeeNanos = feeResp.data.FeeNanos;
-        let resp = await bitcloutApiService.SendBitCloutPreview(
+        let resp = await bitcloutApiService.SendDeSoPreview(
             bitcloutEndpoint,
-            megazordPublicKey,
+            megazordPublicKeyBase58Check,
             Recipient,
             AmountNanos - FeeNanos,
             MinFeeRateNanosPerKB
         );
         return resp
     },
-    async sendCLOUT(taskSession, exchRate, signTransaction) {
+    async sendDeSo(taskSession, exchRate, signTransaction) {
         let AmountNanos = taskSession.task.AmountNanos,
-            megazordPublicKey = taskSession.megazordPublicKey,
+            megazordPublicKeyBase58Check = taskSession.megazordPublicKeyBase58Check,
             Recipient = taskSession.task.Recipient,
             transactionResp,
             [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, taskSession.trgFee);
 
+
         if (megazordFeeNanos) {
-            transactionResp = await bitcloutApiService.SendBitCloutPreview(
+            transactionResp = await bitcloutApiService.SendDeSoPreview(
                 bitcloutEndpoint,
-                megazordPublicKey,
+                megazordPublicKeyBase58Check,
                 Recipient,
                 AmountNanos - megazordFeeNanos,
                 MinFeeRateNanosPerKB
             );
         } else {
-            transactionResp = await this._bitcloutFeeWrapper(megazordPublicKey, Recipient, AmountNanos);
+            transactionResp = await this._bitcloutFeeWrapper(megazordPublicKeyBase58Check, Recipient, AmountNanos);
         }
         let signedTransactionHex = signTransaction(transactionResp.data.TransactionHex);
         try {
@@ -405,9 +410,9 @@ const Tasks = {
                 megazordFeeNanos = transactionResp.data.ChangeAmountNanos;
             }
             try {
-                var FeeResp = await bitcloutApiService.SendBitCloutPreview(
+                var FeeResp = await bitcloutApiService.SendDeSoPreview(
                     bitcloutEndpoint,
-                    megazordPublicKey,
+                    megazordPublicKeyBase58Check,
                     CMPubKey,
                     megazordFeeNanos - transactionResp.data.FeeNanos,
                     MinFeeRateNanosPerKB
@@ -426,7 +431,7 @@ const Tasks = {
     },
     async sendCC(taskSession, exchRate, signTransaction) {
         let AmountNanos = taskSession.task.AmountNanos,
-            megazordPublicKey = taskSession.megazordPublicKey,
+            megazordPublicKeyBase58Check = taskSession.megazordPublicKeyBase58Check,
             Recipient = taskSession.task.Recipient,
             CreatorPublicKeyBase58Check = taskSession.task.CreatorPublicKeyBase58Check,
             transactionResp,
@@ -434,7 +439,7 @@ const Tasks = {
 
         transactionResp = await bitcloutApiService.TransferCreatorCoinPreview(
             bitcloutEndpoint,
-            megazordPublicKey,
+            megazordPublicKeyBase58Check,
             CreatorPublicKeyBase58Check,
             Recipient,
             AmountNanos - megazordFeeNanos,
@@ -450,7 +455,7 @@ const Tasks = {
             try {
                 var FeeResp = await bitcloutApiService.TransferCreatorCoinPreview(
                     bitcloutEndpoint,
-                    megazordPublicKey,
+                    megazordPublicKeyBase58Check,
                     CreatorPublicKeyBase58Check,
                     CMPubKey,
                     megazordFeeNanos,
@@ -478,7 +483,7 @@ const Tasks = {
         const updateResp =  await bitcloutApiService.UpdateProfilePreview(
             bitcloutEndpoint,
             // Specific fields
-            taskSession.megazordPublicKey,
+            taskSession.megazordPublicKeyBase58Check,
             // Optional: Only needed when updater public key != profile public key
             '',
             taskSession.task.NewUsername || "",
@@ -497,12 +502,12 @@ const Tasks = {
             throw new Error("BitClout cannot process such transaction.")
         }
     },
-    async reClout(taskSession, signTransaction) {
-        const createRecloutResponse = await bitcloutApiService.Reclout(bitcloutEndpoint, {
-            UpdaterPublicKeyBase58Check: taskSession.megazordPublicKey,
-            RecloutedPostHashHex: taskSession.task.postHash
+    async repost(taskSession, signTransaction) {
+        const createRepostResponse = await bitcloutApiService.Repost(bitcloutEndpoint, {
+            UpdaterPublicKeyBase58Check: taskSession.megazordPublicKeyBase58Check,
+            RepostedPostHashHex: taskSession.task.postHash
         });
-        let signedTransactionHex = signTransaction(createRecloutResponse.data.TransactionHex);
+        let signedTransactionHex = signTransaction(createRepostResponse.data.TransactionHex);
         try {
             await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
         } catch (e) {
@@ -518,16 +523,16 @@ async function executeTask(taskSession, signTransaction) {
             return
         } else if (type == 'send') {
             var exchRate = await getExchangeRate();
-            if (taskSession.task.Currency === '$ClOUT') {
-                await Tasks.sendCLOUT(taskSession, exchRate, signTransaction);
+            if (taskSession.task.Currency === '$DESO') {
+                await Tasks.sendDeSo(taskSession, exchRate, signTransaction);
             } else {
                 await Tasks.sendCC(taskSession, exchRate, signTransaction);
             }
         } else if (type == 'updateProfile') {
             await Tasks.updateProfile(taskSession, signTransaction);
         }
-        else if (type == 'reClout') {
-            await Tasks.reClout(taskSession, signTransaction);
+        else if (type == 'repost') {
+            await Tasks.repost(taskSession, signTransaction);
         } else {
             throw new Error('Task type: ' + type + ' not supported');
         }
@@ -538,7 +543,7 @@ async function executeTask(taskSession, signTransaction) {
 
 // Create a new array with total length and merge all source arrays.
 app.post('/ts/run', async (req, res, next) => {
-    const {taskSessionId, zordShrtId, encryptedEntropy, encryptionKey} = req.body.data;
+    const {taskSessionId, encryptedEntropy, encryptionKey, zsid} = req.body.data;
     const taskSessionRef = await db.ref('taskSessions/' + taskSessionId).get();
     const encryptedSeedsRef = await db.ref('protected/encryptedSeeds/' + taskSessionId).get();
     var encryptedSeeds = null;
@@ -546,20 +551,22 @@ app.post('/ts/run', async (req, res, next) => {
         res.send({data: { error: 'Taks not exists or expired.'}})
         return
     }
-    const taskSession = taskSessionRef.val();
+    var {taskSession, expire, zsids} = taskSessionRef.val();
+    zsids = Object.keys(zsids).reduce((cont, key) => {cont[zsids[key]] = key; return cont}, {});
+    let trgZordPublicKeyBase58Check = zsids[zsid];
     const zordsCount = taskSession.zords.length;
     if (encryptedSeedsRef.exists()) {
         encryptedSeeds = encryptedSeedsRef.val();
     } else {
         encryptedSeeds = {
-            expire: taskSession.expire,
+            expire: expire,
             zordsEntropy: []
         }
     }
     encryptedSeeds.zordsEntropy = encryptedSeeds.zordsEntropy || [];
     const readyZords = encryptedSeeds.zordsEntropy.map(it => it.PublicKeyBase58Check)
     for (let zord of taskSession.zords) {
-        if ((zord.shrtId === zordShrtId)) {
+        if ((zord.PublicKeyBase58Check === trgZordPublicKeyBase58Check)) {
             if (readyZords.includes(zord.PublicKeyBase58Check)) {
                 encryptedSeeds.zordsEntropy[readyZords.indexOf(zord.PublicKeyBase58Check)] = {
                     PublicKeyBase58Check: zord.PublicKeyBase58Check,
@@ -591,18 +598,18 @@ app.post('/ts/run', async (req, res, next) => {
     var taskError = '';
     var taskData = {megazordId:taskSession.megazordId};
     try {
-        var [megazordPrivateKey, megazordPublicKey] = zordsToMegazord(zordsEntropySignature, encryptionKey);
+        var [megazordPrivateKey, megazordPublicKeyBase58Check] = zordsToMegazord(zordsEntropySignature, encryptionKey);
     } catch(e) {
         taskError = 'Zord Seeds is Incorrect';
         finishTask(taskSessionId, task, taskData, taskError);
         return
     }
-    if (taskSession.megazordPublicKey && megazordPublicKey !== taskSession.megazordPublicKey) {
+    if (taskSession.megazordPublicKeyBase58Check && megazordPublicKeyBase58Check !== taskSession.megazordPublicKeyBase58Check) {
         taskError = 'Zord Seeds is Incorrect';
         finishTask(taskSessionId, task, taskData, taskError);
         return
     }
-    taskData.megazordPublicKey = megazordPublicKey;
+    taskData.megazordPublicKeyBase58Check = megazordPublicKeyBase58Check;
     const signTransaction = tx => {
         try {
             return signingService.signTransaction(megazordPrivateKey, tx);
@@ -628,3 +635,21 @@ exports.taskSessions = functions.https.onRequest(app);
 //     res.send('Page!');
 //     res.end();
 // });
+
+// var taskSession = {
+//     taskId: taskId,
+//     initiator: {publicKey},
+//     megazordId: data.megazordId,
+//     task: dbTask,
+//     readyZordsShrtIds: [],
+//     endPoint: functionsUrl,
+//     redirect: '/admin/tasks_list/' + data.megazordId
+// }
+// zord ={
+//     PubKeyShort: zordId.slice(0, 14) + '...',
+//     PublicKeyBase58Check: zordId,
+//     shrtId: shrtId,
+//     Username: profileRes.Profile.Username,
+//     ProfilePic: profileRes.Profile.ProfilePic,
+//     link: `/gts/${taskShrtId}&${shrtId}&${encryptionKey}`
+// }
