@@ -33,11 +33,11 @@ const bitcloutApiService = new BackendApiService({
                         'Content-Type': 'application/json',
                         'User-Agent': BitCloutApiToken
                     }
-                });
+                });                
                 return result;
             } catch (e) {
                 attempts += 1;
-                errorMessage = e.message;
+                errorMessage = e.response.data.error;
                 console.log(`ApiService Error: ${errorMessage}. attempts: ${attempts}`)
                 await sleep(500);
             }
@@ -496,6 +496,8 @@ const Tasks = {
             MinFeeRateNanosPerKB
         );
         let signedTransactionHex = signTransaction(updateResp.data.TransactionHex);
+        //to avoid 403
+        await sleep(1000);
         try {
             await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
         } catch (e) {
