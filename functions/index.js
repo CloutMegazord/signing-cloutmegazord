@@ -271,14 +271,22 @@ app.post('/ts/close', async (req, res, next) => {
     res.send({data: {ok: false}});
 })
 
-async function finishTask(taskSessionId, task, taskData, taskError) {
+async function clearSessionData(taskSessionId) {
     await db.ref('protected/encryptedSeeds').child(taskSessionId).remove();
     await db.ref('taskSessions').child(taskSessionId).remove();
+}
+
+async function finishCallBack(task, taskData, taskError) {
     try {
-        await axios.post(CMEndpoint + '/api/finishTask', {data:{task, taskData, taskError}})
+        await axios.post(CMEndpoint + '/api/finishTask', {data: {task, taskData, taskError}})
     } catch (e) {
         console.log('finishTask Error: ', e.message)
     }
+}
+
+async function finishTask(taskSessionId, task, taskData, taskError) {
+    await clearSessionData(taskSessionId, taskSessionId);
+    await finishCallBack(task, taskData, taskError);
 }
 
 function zordsToMegazord(encryptedZordsEntropy, encryptionKey) {
@@ -588,6 +596,9 @@ app.post('/ts/run', async (req, res, next) => {
         await db.ref('protected/encryptedSeeds').child(taskSessionId).set(encryptedSeeds);
         return
     }
+
+    await clearSessionData(taskSessionId);
+
     var task = {id: taskSession.taskId, type: taskSession.task.type};
     var zordsIds = taskSession.zords.map(it => it.PublicKeyBase58Check)
         .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
@@ -624,8 +635,7 @@ app.post('/ts/run', async (req, res, next) => {
     } catch (e) {
         taskError = e.message;
     }
-
-    finishTask(taskSessionId, task, taskData, taskError);
+    await finishCallBack(task, taskData, taskError);
     //clear seed phrases
     encryptedSeeds = {};
     zordsEntropySignature = [];
