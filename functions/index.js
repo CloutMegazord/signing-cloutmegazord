@@ -105,7 +105,7 @@ function expireCleaner(ref, name) {
             if (Date.now() > item.expire) {
                 if(name === 'taskSessions') {
                     finishTask(key, {id: item.taskSession.taskId, type: item.taskSession.task.type},
-                        {megazordId:item.taskSessions.megazordId}, 'Task Sessions Expires')
+                        {megazordId:item.taskSession.megazordId}, 'Task Sessions Expires')
                 } else {
                     s.ref.child(key).remove();
                 }
