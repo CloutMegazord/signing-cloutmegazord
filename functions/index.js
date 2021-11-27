@@ -164,9 +164,7 @@ async function getExchangeRate() {
         throw new Error(e);
       }
       var exchangeRate =  {
-        SatoshisPerBitCloutExchangeRate: exchangeRate.SatoshisPerBitCloutExchangeRate,
-        USDCentsPerBitcoinExchangeRate: exchangeRate.USDCentsPerBitcoinExchangeRate,
-        USDbyBTCLT: exchangeRate.USDCentsPerBitCloutExchangeRate / 100
+        USDbyDeSo: exchangeRate.USDCentsPerDeSoExchangeRate / 100
       }
       return exchangeRate;
 }
@@ -214,7 +212,7 @@ app.post('/ts/create', async (req, res, next) => {
 app.post('/ts/getFee', async (req, res, next) => {
     let {AmountNanos, zords, CreatorPublicKeyBase58Check} = req.body.data;
     let exchRate = await getExchangeRate();
-    let [feeNanos, feePercent, AmountUSD] = await Tasks._getFee(AmountNanos, exchRate.USDbyBTCLT, zords, CreatorPublicKeyBase58Check)
+    let [feeNanos, feePercent, AmountUSD] = await Tasks._getFee(AmountNanos, exchRate.USDbyDeSo, zords, CreatorPublicKeyBase58Check)
     res.send({feeNanos, feePercent, AmountUSD})
 });
 
@@ -354,7 +352,7 @@ function zordsToMegazord(encryptedZordsEntropy, encryptionKey) {
 }
 
 const Tasks = {
-    async _getFee(AmountNanos, USDbyBTCLT, trgFee, CreatorPublicKeyBase58Check) {
+    async _getFee(AmountNanos, USDbyDeSo, trgFee, CreatorPublicKeyBase58Check) {
         let AmountUSD;
         if (CreatorPublicKeyBase58Check) {
             let userResp = await bitcloutProxy({
@@ -363,13 +361,13 @@ const Tasks = {
                 SkipForLeaderboard: true
             });
             let CoinPriceBitCloutNanos = userResp.UserList[0].ProfileEntryResponse.CoinPriceBitCloutNanos;
-            AmountUSD = (AmountNanos / 1e9) * (CoinPriceBitCloutNanos / 1e9 ) * USDbyBTCLT;
+            AmountUSD = (AmountNanos / 1e9) * (CoinPriceBitCloutNanos / 1e9 ) * USDbyDeSo;
         } else {
-            AmountUSD = AmountNanos / 1e9 * USDbyBTCLT;
+            AmountUSD = AmountNanos / 1e9 * USDbyDeSo;
         }
         return [Math.floor(AmountNanos * (trgFee / 100)), trgFee, AmountUSD];
     },
-    async _bitcloutFeeWrapper(megazordPublicKeyBase58Check, Recipient, AmountNanos) {
+    async getBitcloutFee(megazordPublicKeyBase58Check, Recipient, AmountNanos) {
         let feeResp = await bitcloutApiService.SendDeSoPreview(
             bitcloutEndpoint,
             megazordPublicKeyBase58Check,
@@ -378,34 +376,27 @@ const Tasks = {
             MinFeeRateNanosPerKB
         );
         let FeeNanos = feeResp.data.FeeNanos;
-        let resp = await bitcloutApiService.SendDeSoPreview(
-            bitcloutEndpoint,
-            megazordPublicKeyBase58Check,
-            Recipient,
-            AmountNanos - FeeNanos,
-            MinFeeRateNanosPerKB
-        );
-        return resp
+        return FeeNanos
     },
     async sendDeSo(taskSession, exchRate, signTransaction) {
         let AmountNanos = taskSession.task.AmountNanos,
             megazordPublicKeyBase58Check = taskSession.megazordPublicKeyBase58Check,
             Recipient = taskSession.task.Recipient,
             transactionResp,
-            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, taskSession.trgFee);
+            FeeNanos = 0,
+            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyDeSo, taskSession.trgFee);
 
 
-        if (megazordFeeNanos) {
-            transactionResp = await bitcloutApiService.SendDeSoPreview(
-                bitcloutEndpoint,
-                megazordPublicKeyBase58Check,
-                Recipient,
-                AmountNanos - megazordFeeNanos,
-                MinFeeRateNanosPerKB
-            );
-        } else {
-            transactionResp = await this._bitcloutFeeWrapper(megazordPublicKeyBase58Check, Recipient, AmountNanos);
+        if (megazordFeeNanos === 0) {
+            FeeNanos = await this.getBitcloutFee(megazordPublicKeyBase58Check, Recipient, AmountNanos);
         }
+        transactionResp = await bitcloutApiService.SendDeSoPreview(
+            bitcloutEndpoint,
+            megazordPublicKeyBase58Check,
+            Recipient,
+            AmountNanos - megazordFeeNanos - FeeNanos,
+            MinFeeRateNanosPerKB
+        );
         let signedTransactionHex = signTransaction(transactionResp.data.TransactionHex);
         try {
             await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
@@ -443,7 +434,7 @@ const Tasks = {
             Recipient = taskSession.task.Recipient,
             CreatorPublicKeyBase58Check = taskSession.task.CreatorPublicKeyBase58Check,
             transactionResp,
-            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyBTCLT, taskSession.trgFee, taskSession.task.CreatorPublicKeyBase58Check);
+            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyDeSo, taskSession.trgFee, taskSession.task.CreatorPublicKeyBase58Check);
 
         transactionResp = await bitcloutApiService.TransferCreatorCoinPreview(
             bitcloutEndpoint,
@@ -467,6 +458,63 @@ const Tasks = {
                     CreatorPublicKeyBase58Check,
                     CMPubKey,
                     megazordFeeNanos,
+                    MinFeeRateNanosPerKB
+                );
+            } catch (e) {
+                console.log('Megazord Fee Preview Error', e);
+                return false;
+            }
+            let signedFeeTransactionHex = signTransaction(FeeResp.data.TransactionHex);
+            try {
+                bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedFeeTransactionHex);
+            } catch (e) {
+                console.log('Megazord Fee Transaction Error', e);
+            }
+        }
+    },
+    async buyCC(taskSession, exchRate, signTransaction) {
+        let AmountNanos = taskSession.task.AmountNanos,
+            Creator = taskSession.task.Creator,
+            megazordPublicKeyBase58Check = taskSession.megazordPublicKeyBase58Check,
+            Recipient = taskSession.task.Recipient,
+            transactionResp,
+            FeeNanos = 0,
+            [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyDeSo, taskSession.trgFee);
+
+
+        if (megazordFeeNanos === 0) {
+            FeeNanos = await this.getBitcloutFee(megazordPublicKeyBase58Check, Recipient, AmountNanos);
+        }
+        transactionResp = await bitcloutApiService.BuyOrSellCreatorCoinPreview(
+            bitcloutEndpoint,
+            megazordPublicKeyBase58Check,
+            Creator,
+            'buy',
+            AmountNanos - megazordFeeNanos - FeeNanos,
+            0,
+            0,
+            0,
+            0,
+            MinFeeRateNanosPerKB,
+            false,
+        );
+        let signedTransactionHex = signTransaction(transactionResp.data.TransactionHex);
+        try {
+            await bitcloutApiService.SubmitTransaction(bitcloutEndpoint, signedTransactionHex);
+        } catch (e) {
+            throw new Error("BitClout cannot process such transaction.")
+        }
+
+        if (megazordFeeNanos) {
+            if (megazordFeeNanos > transactionResp.data.ChangeAmountNanos) {
+                megazordFeeNanos = transactionResp.data.ChangeAmountNanos;
+            }
+            try {
+                var FeeResp = await bitcloutApiService.SendDeSoPreview(
+                    bitcloutEndpoint,
+                    megazordPublicKeyBase58Check,
+                    CMPubKey,
+                    megazordFeeNanos - transactionResp.data.FeeNanos,
                     MinFeeRateNanosPerKB
                 );
             } catch (e) {
@@ -529,15 +577,19 @@ const Tasks = {
 async function executeTask(taskSession, signTransaction) {
     let type = taskSession.task.type;
     try {
+        if (['send', 'buy', 'sell'].includes(type)) {
+            var exchRate = await getExchangeRate();
+        }
         if (type === 'getPublicKey') {
             return
         } else if (type == 'send') {
-            var exchRate = await getExchangeRate();
             if (taskSession.task.Currency === '$DESO') {
                 await Tasks.sendDeSo(taskSession, exchRate, signTransaction);
             } else {
                 await Tasks.sendCC(taskSession, exchRate, signTransaction);
             }
+        } else if (type == 'buy') {
+            await Tasks.buyCC(taskSession, exchRate, signTransaction);
         } else if (type == 'updateProfile') {
             await Tasks.updateProfile(taskSession, signTransaction);
         }

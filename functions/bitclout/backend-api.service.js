@@ -190,6 +190,54 @@ class BackendApiService {
             });
     }
 
+    BuyOrSellCreatorCoinPreview(
+        endpoint,
+        // The public key of the user who is making the buy/sell.
+        UpdaterPublicKeyBase58Check,
+        // The public key of the profile that the purchaser is trying
+        // to buy.
+        CreatorPublicKeyBase58Check,
+        // Whether this is a "buy" or "sell"
+        OperationType,
+        // Generally, only one of these will be used depending on the OperationType
+        // set. In a Buy transaction, DeSoToSellNanos will be converted into
+        // creator coin on behalf of the user. In a Sell transaction,
+        // CreatorCoinToSellNanos will be converted into DeSo. In an AddDeSo
+        // operation, DeSoToAddNanos will be aded for the user. This allows us to
+        // support multiple transaction types with same meta field.
+        DeSoToSellNanos,
+        CreatorCoinToSellNanos,
+        DeSoToAddNanos,
+        // When a user converts DeSo into CreatorCoin, MinCreatorCoinExpectedNanos
+        // specifies the minimum amount of creator coin that the user expects from their
+        // transaction. And vice versa when a user is converting CreatorCoin for DeSo.
+        // Specifying these fields prevents the front-running of users' buy/sell. Setting
+        // them to zero turns off the check. Give it your best shot, Ivan.
+        MinDeSoExpectedNanos,
+        MinCreatorCoinExpectedNanos,
+        MinFeeRateNanosPerKB,
+        InTutorial,
+      ){
+        DeSoToSellNanos = Math.floor(DeSoToSellNanos);
+        CreatorCoinToSellNanos = Math.floor(CreatorCoinToSellNanos);
+        DeSoToAddNanos = Math.floor(DeSoToAddNanos);
+        MinDeSoExpectedNanos = Math.floor(MinDeSoExpectedNanos);
+        MinCreatorCoinExpectedNanos = Math.floor(MinCreatorCoinExpectedNanos);
+    
+        return this.post(endpoint, BackendRoutes.RoutePathBuyOrSellCreatorCoin, {
+          UpdaterPublicKeyBase58Check,
+          CreatorPublicKeyBase58Check,
+          OperationType,
+          DeSoToSellNanos,
+          CreatorCoinToSellNanos,
+          DeSoToAddNanos,
+          MinDeSoExpectedNanos,
+          MinCreatorCoinExpectedNanos,
+          MinFeeRateNanosPerKB,
+          InTutorial: InTutorial,
+        });
+      }
+
     UpdateProfilePreview(
         endpoint,
         // Specific fields
