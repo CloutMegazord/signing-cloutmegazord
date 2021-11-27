@@ -386,7 +386,6 @@ const Tasks = {
             FeeNanos = 0,
             [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyDeSo, taskSession.trgFee);
 
-
         if (megazordFeeNanos === 0) {
             FeeNanos = await this.getBitcloutFee(megazordPublicKeyBase58Check, Recipient, AmountNanos);
         }
@@ -480,7 +479,6 @@ const Tasks = {
             transactionResp,
             FeeNanos = 0,
             [megazordFeeNanos, _, __] = await this._getFee(AmountNanos, exchRate.USDbyDeSo, taskSession.trgFee);
-
 
         if (megazordFeeNanos === 0) {
             FeeNanos = await this.getBitcloutFee(megazordPublicKeyBase58Check, Recipient, AmountNanos);
